@@ -1,0 +1,98 @@
+ACCION: Parte alícuota del capital social de una sociedad anónima.
+
+ACTIVO: Recurso económico que posee una entidad o persona natural del cual se esperan obtener beneficios o rendimientos futuros.
+
+AHORRO: Parte de los ingresos que no se destina al gasto de consumo inmediato y se reserva para contingencias o inversiones futuras.
+
+APALANCAMIENTO: Uso de endeudamiento o dinero prestado para financiar una inversión con el fin de incrementar su rentabilidad potencial.
+
+ARBITRAJE: Estrategia financiera de comprar y vender simultáneamente un mismo activo en diferentes mercados para aprovechar discrepancias de precio.
+
+BANCO CENTRAL: Entidad pública responsable de gestionar la moneda y la política monetaria de una nación.
+
+BEAR MARKET: Mercado bajista, caracterizado por una tendencia prolongada a la baja y caídas de precios.
+
+BITCOIN: La primera y más grande criptomoneda descentralizada basada en la tecnología blockchain.
+
+BONO: Instrumento de renta fija que representa un préstamo hecho por un inversor a un emisor (generalmente gubernamental o corporativo).
+
+BROKER: Intermediario financiero autorizado para realizar operaciones de compra y venta de valores por cuenta de sus clientes.
+
+BULL MARKET: Mercado alcista, caracterizado por una tendencia sostenida al alza de los precios de las acciones o activos.
+
+CAPITAL: Recursos financieros o activos que se poseen e invierten para generar riqueza o iniciar un negocio.
+
+COMISION: Porcentaje o tarifa fija cobrada por un broker o intermediario financiero por realizar una transacción bursátil.
+
+CRIPTOMONEDA: Moneda digital basada en tecnología de criptografía y cadenas de bloques, descentralizada y sin intermediarios tradicionales.
+
+DEFLACION: Caída generalizada y prolongada del nivel de precios de los bienes y servicios, contraria a la inflación.
+
+DEMANDA: Cantidad de bienes o servicios que los compradores desean y tienen la capacidad de adquirir a diferentes niveles de precios.
+
+DEUDA: Obligación financiera contraída por un individuo, empresa o gobierno de devolver una cantidad de dinero prestada más intereses.
+
+DIVERSIFICACION: Estrategia de inversión que consiste en distribuir el capital en distintos activos para reducir el riesgo global.
+
+DIVIDENDO: Proporción de ganancias de una empresa distribuida periódicamente a sus accionistas.
+
+ETF: Exchange Traded Fund. Fondo de inversión que cotiza en bolsa como si fuera una acción.
+
+FONDOS DE INVERSION: Mecanismos de inversión colectiva que reúnen fondos de múltiples inversionistas para invertirlos en diversos instrumentos financieros.
+
+INFLACION: Aumento generalizado y sostenido de los precios de bienes y servicios en un país durante un periodo de tiempo, lo que reduce el poder adquisitivo.
+
+INTERES COMPUESTO: Efecto financiero donde los intereses generados se suman al capital inicial para producir nuevos intereses en periodos sucesivos.
+
+INVERSION: Uso de recursos financieros o capital con el fin de adquirir activos que generen valor, renta o dividendos en el futuro.
+
+LIQUIDEZ: Facilidad y rapidez con la que un activo financiero puede ser comprado o vendido sin alterar significativamente su precio.
+
+MERCADO DE VALORES: Espacio físico o virtual donde los agentes compran y venden acciones, bonos y otros valores financieros.
+
+NASDAQ: Índice bursátil que agrupa a las principales empresas tecnológicas.
+
+OFERTA: Cantidad total de un bien o servicio que los vendedores están dispuestos a vender a un precio determinado.
+
+PASIVO: Conjunto de deudas y obligaciones financieras que posee una persona o empresa.
+
+PATRIMONIO: Diferencia aritmética entre la suma de todos los activos y la suma de todos los pasivos de una entidad.
+
+PENSION: Prestación económica de carácter periódico y vitalicio concedida a un trabajador tras su jubilación o incapacidad.
+
+PERDIDA: Disminución neta del valor financiero o resultado negativo en una operación o ejercicio contable.
+
+PIB: Producto Interno Burto (PIB). Medida del valor de mercado de todos los bienes y servicios finales producidos en un país durante un año.
+
+PORTAFOLIO: Cartera o colección de activos financieros en propiedad de un individuo o institución.
+
+PRECIO: Valor monetario que se asigna a un bien, servicio o activo financiero en el mercado.
+
+PRESUPUESTO: Planificación y estimación formal de los ingresos y gastos financieros en un periodo específico.
+
+RECESION: Periodo de declive económico generalizado caracterizado por la disminución del PIB durante al menos dos trimestres consecutivos.
+
+RENDIMIENTO: Ganancia o retorno financiero obtenido de una inversión, generalmente expresado en porcentaje anual.
+
+RENTA FIJA: Inversiones donde se conoce de antemano el interés a recibir, como los bonos.
+
+RENTA VARIABLE: Inversiones donde no se conoce la rentabilidad futura, como las acciones.
+
+RENTABILIDAD: Capacidad de una inversión o actividad económica de generar utilidades o rendimientos superiores al capital invertido.
+
+RIESGO: Probabilidad de que una inversión produzca un retorno menor al esperado o pierda valor.
+
+S&P 500: Índice bursátil que representa a las 500 empresas más grandes de Estados Unidos.
+
+SEGURO: Contrato financiero por el cual una entidad aseguradora cubre un riesgo o siniestro a cambio del pago de una prima regular.
+
+TASA DE DESEMPLEO: Proporción de la población activa que busca trabajo de forma activa pero no lo encuentra.
+
+TASA DE INTERES: Precio cobrado por el uso del dinero ajeno, expresado habitualmente como porcentaje anual de un crédito o ahorro.
+
+TIPO DE CAMBIO: Relación de valor o precio entre dos monedas o divisas de diferentes países.
+
+UTILIDAD: Ganancia o beneficio neto obtenido tras restar todos los gastos y costos de los ingresos totales.
+
+VOLATILIDAD: Medida de la frecuencia e intensidad de las variaciones del precio de un activo.
+

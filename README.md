@@ -36,6 +36,7 @@ Una vez que hayas abierto Thonny, necesitas instalar las librerías requeridas. 
    - `sounddevice` (Para la captura de audio del micrófono).
    - `pyttsx3` (Para la síntesis de texto a voz).
    - `numpy` (Requerido para la manipulación de audio).
+   - `yfinance`
 
 ### 3. Descargar el Modelo Acústico de Vosk (Offline STT)
 Para que el asistente pueda escucharte sin internet, requiere un modelo de lenguaje en español.

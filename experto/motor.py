@@ -3,6 +3,8 @@ from conocimiento.relaciones import obtener_relaciones
 from experto.inferencia import evaluar_reglas
 from experto.consultas import buscar_pregunta_frecuente
 from experto.normalizador import normalizar_texto
+from experto.finanzas_tiempo_real import generar_respuesta_precio
+import re
 
 def procesar_consulta(texto_usuario):
     """
@@ -17,6 +19,37 @@ def procesar_consulta(texto_usuario):
     texto_usuario = normalizar_texto(texto_usuario)
     if texto_usuario != texto_original.lower():
         log_inferencia.append(f"Texto normalizado a: '{texto_usuario}'")
+        
+    # 0.5. Búsqueda en Tiempo Real (yfinance)
+    # Detectar patrones de precio o tickers directo (ej. "precio de MSFT", "cotizacion de AAPL", "MSFT")
+    match_precio = re.search(
+        r'\b(?:precio de|cotizacion de|cotización de|valor de|cuanto vale|cuánto vale|accion de|acción de|ticker)\s*(?:la accion de|la acción de|el ticker|de|el)?\s*([a-zA-Z]+)\b', 
+        texto_usuario
+    )
+    
+    ticker_candidato = None
+    es_busqueda_explicita = False
+    
+    if match_precio:
+        ticker_candidato = match_precio.group(1).upper()
+        es_busqueda_explicita = True
+    else:
+        # Si es una sola palabra de 2 a 5 letras que no es un concepto ni un sinónimo en la BD
+        palabras = texto_usuario.strip().split()
+        if len(palabras) == 1 and palabras[0].isalpha() and 2 <= len(palabras[0]) <= 5:
+            # Comprobar si existe en la BD
+            if not obtener_concepto(palabras[0]):
+                ticker_candidato = palabras[0].upper()
+                es_busqueda_explicita = False
+
+    if ticker_candidato:
+        log_inferencia.append(f"Intención de mercado en tiempo real detectada para ticker: {ticker_candidato}")
+        res, log_yf = generar_respuesta_precio(ticker_candidato)
+        # Si no hubo error al buscar, o si era una búsqueda explícita (como "precio de MSFT")
+        if "No se pudieron obtener datos" not in log_yf[-1] or es_busqueda_explicita:
+            log_inferencia.extend(log_yf)
+            return res, log_inferencia
+
         
     # 1. Búsqueda Directa en Preguntas Frecuentes
     respuesta_rapida = buscar_pregunta_frecuente(texto_usuario)
