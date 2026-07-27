@@ -231,11 +231,18 @@ class AsistenteApp:
     def actualizar_lista_puertos(self):
         puertos = esp32_comm.obtener_puertos_disponibles()
         self.combo_puertos['values'] = puertos
+        
+        # Preferir COM5 o cualquier puerto distinto a COM4 (ESP32-CAM)
+        puertos_s3 = [p for p in puertos if p != "COM4"]
+        
         if "COM5" in puertos:
             self.combo_puertos.set("COM5")
+        elif puertos_s3:
+            self.combo_puertos.set(puertos_s3[0])
         elif puertos:
             self.combo_puertos.current(0)
-        self.agregar_log_consola(f"[PUERTOS] Lista actualizada: {puertos}")
+            
+        self.agregar_log_consola(f"[PUERTOS] Lista de puertos del sistema actualizada: {puertos}")
 
     def conectar_esp32_dinamico(self):
         puerto_sel = self.combo_puertos.get()
