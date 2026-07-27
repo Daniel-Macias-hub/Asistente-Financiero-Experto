@@ -1,21 +1,5 @@
 import re
-import pyttsx3
 import threading
-
-# Inicializamos el motor globalmente
-engine = pyttsx3.init()
-
-# Configuración de voz en español
-voces = engine.getProperty('voices')
-for voz in voces:
-    if "spanish" in voz.name.lower() or "es" in voz.languages or "sabina" in voz.name.lower() or "helena" in voz.name.lower():
-        engine.setProperty('voice', voz.id)
-        break
-
-engine.setProperty('rate', 160)  # Velocidad de habla natural fluida
-engine.setProperty('volume', 1.0) # Volumen máximo
-
-reproduciendo = False
 
 def limpiar_texto_para_tts(texto: str) -> str:
     """
@@ -25,7 +9,7 @@ def limpiar_texto_para_tts(texto: str) -> str:
     if not texto:
         return ""
     
-    # 1. Eliminar formato markdown (**bold**, *italic*, # headers, etc.)
+    # 1. Eliminar formato markdown
     t = re.sub(r'\*+', '', texto)
     t = re.sub(r'#+', '', t)
     t = re.sub(r'_+', '', t)
@@ -34,22 +18,18 @@ def limpiar_texto_para_tts(texto: str) -> str:
     t = re.sub(r'[\─\─\─\─\─\─]+', '', t)
     t = re.sub(r'•', '', t)
     
-    # 2. Eliminar emojis comunes de la interfaz
+    # 2. Eliminar emojis
     t = re.sub(r'[\U00010000-\U0010ffff]', '', t)
     t = re.sub(r'[📊💰🇲🇽📅💵🏦📖🔍🎙️🤖⚠️❌✓⚙🔴🔊💡📷⚡]', '', t)
     
-    # 3. Limpiar espacios múltiples y saltos innecesarios
+    # 3. Limpiar espacios múltiples
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 
+_tts_lock = threading.Lock()
+
 def detener_habla():
-    """Detiene inmediatamente la reproducción de voz del asistente."""
-    global reproduciendo
-    reproduciendo = False
-    try:
-        engine.stop()
-    except Exception:
-        pass
+    """Detiene la reproducción de voz actual."""
     try:
         from comunicacion_esp32 import esp32_comm
         if esp32_comm.conectado:
@@ -57,35 +37,44 @@ def detener_habla():
     except Exception:
         pass
 
-def hablar(texto):
+def hablar(texto: str):
     """
-    Sintetiza la respuesta en voz fluida y natural en español sin pronunciar 'asteriscos'.
+    Sintetiza el texto usando pyttsx3 en un hilo dedicado de forma segura
+    sin bloquear la interfaz ni otras consultas.
     """
-    global reproduciendo
-    reproduciendo = True
-
     texto_limpio = limpiar_texto_para_tts(texto)
     if not texto_limpio:
         return
 
-    try:
-        from comunicacion_esp32 import esp32_comm
-        if esp32_comm.conectado:
-            esp32_comm.enviar_comando_oled("RESPONDIENDO", texto_limpio[:12])
-    except Exception:
-        pass
+    def _run_tts():
+        with _tts_lock:
+            try:
+                from comunicacion_esp32 import esp32_comm
+                if esp32_comm.conectado:
+                    esp32_comm.enviar_comando_oled("RESPONDIENDO", texto_limpio[:12])
+            except Exception:
+                pass
 
-    try:
-        if reproduciendo:
-            engine.say(texto_limpio)
-            engine.runAndWait()
-    except Exception as e:
-        print(f"[TTS ERR] {e}")
-    finally:
-        reproduciendo = False
-        try:
-            from comunicacion_esp32 import esp32_comm
-            if esp32_comm.conectado:
-                esp32_comm.enviar_comando_oled("IDLE")
-        except Exception:
-            pass
+            try:
+                import pyttsx3
+                engine = pyttsx3.init()
+                voces = engine.getProperty('voices')
+                for voz in voces:
+                    if any(k in voz.name.lower() for k in ["spanish", "es", "sabina", "helena", "raul", "pablo"]):
+                        engine.setProperty('voice', voz.id)
+                        break
+                engine.setProperty('rate', 165)
+                engine.setProperty('volume', 1.0)
+                engine.say(texto_limpio)
+                engine.runAndWait()
+            except Exception as e:
+                print(f"[TTS WARNING] {e}")
+            finally:
+                try:
+                    from comunicacion_esp32 import esp32_comm
+                    if esp32_comm.conectado:
+                        esp32_comm.enviar_comando_oled("IDLE")
+                except Exception:
+                    pass
+
+    threading.Thread(target=_run_tts, daemon=True).start()

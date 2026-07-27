@@ -182,16 +182,18 @@ class DetectorORB:
         if not scores:
             return None, 0.0
         mejor = max(scores, key=scores.get)
-        if scores[mejor] < 5:
-            return None, 0.0
+        melhor_score = scores[mejor]
+        if melhor_score >= 8:
+            confianza_orb = min(0.95, melhor_score / 15.0)
+            self._hist.append(mejor)
+            if len(self._hist) > 5:
+                self._hist.pop(0)
+            votos = self._hist.count(mejor)
+            confianza_final = confianza_orb * (0.6 + 0.4 * (votos / 5))
+            if confianza_final >= 0.60:
+                return mejor, round(confianza_final, 2)
 
-        confianza = min(0.82, scores[mejor] / 20.0)
-        self._hist.append(mejor)
-        if len(self._hist) > 5:
-            self._hist.pop(0)
-        votos = self._hist.count(mejor)
-        confianza_final = confianza * (0.6 + 0.4 * (votos / 5))
-        return mejor, round(confianza_final, 2)
+        return None, 0.0
 
     def obtener_clases(self):
         return list(self.descriptores_db.keys())
@@ -219,10 +221,11 @@ class DetectorCriptoUnificado:
     def detectar(self, frame_bgr) -> tuple:
         if self.gemini.disponible:
             cripto, conf = self.gemini.detectar(frame_bgr)
-            if cripto and conf > 0.5:
+            if cripto and conf > 0.4:
                 return cripto, conf, "gemini"
         if self.orb.esta_listo():
             cripto, conf = self.orb.detectar(frame_bgr)
-            if cripto and conf > 0.15:
+            if cripto and conf >= 0.55:
                 return cripto, conf, "orb"
         return None, 0.0, "none"
+
