@@ -406,7 +406,7 @@ class AsistenteApp:
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
         f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=15, pady=6)
 
-        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.capturar_foto).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.probar_camara_real).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="⚡ Encender/Apagar Flash", command=self.alternar_flash).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="❌ Cerrar Ventana", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
