@@ -1,6 +1,6 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Poll de sys.stdin / Compatibilidad MicroPython sin sys.stdout.flush
+# Bucle Continuo con Auto-Prueba Inicial (OLED + Audio + Mic)
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
 import machine
@@ -148,6 +148,8 @@ def mostrar_idle():
 # Pruebas de Hardware Físicas
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
+    sys.stdout.write("[SELF-TEST] Probando animaciones OLED...\n")
+    safe_flush()
     estados = [
         ("INICIANDO", animacion_iniciando),
         ("ESCUCHANDO", animacion_escuchando),
@@ -158,7 +160,7 @@ def ejecutar_test_oled_secuencia():
     for nombre, func in estados:
         t_start = time.time()
         f = 0
-        while time.time() - t_start < 2.0:
+        while time.time() - t_start < 1.2:
             func(f)
             f += 1
             time.sleep(0.08)
@@ -167,10 +169,12 @@ def ejecutar_test_oled_secuencia():
     safe_flush()
 
 def reproducir_tono_prueba_audio():
-    tone_buf = bytearray(SAMPLE_RATE * 2 * 2)
+    sys.stdout.write("[SELF-TEST] Emitiendo tono en bocina MAX98357A...\n")
+    safe_flush()
+    tone_buf = bytearray(SAMPLE_RATE * 2)
     freq = 440
     amplitude = 12000
-    for i in range(SAMPLE_RATE * 2):
+    for i in range(SAMPLE_RATE):
         sample = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
         struct.pack_into("<h", tone_buf, i * 2, sample)
     
@@ -221,9 +225,16 @@ def main():
     sys.stdout.write("[ESP32-S3] Firmware listo en bucle infinito.\n")
     safe_flush()
 
+    # Auto-prueba de encendido (OLED + Audio)
+    try:
+        ejecutar_test_oled_secuencia()
+        reproducir_tono_prueba_audio()
+    except Exception as ex_init:
+        sys.stdout.write(f"[AUTO-TEST ERR] {ex_init}\n")
+        safe_flush()
+
     while True:
         try:
-            # Polling con timeout de 50ms para no bloquear la animación OLED
             events = poll_obj.poll(50)
             for obj, flag in events:
                 if flag & uselect.POLLIN:
