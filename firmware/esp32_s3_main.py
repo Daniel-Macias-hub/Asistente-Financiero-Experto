@@ -1,6 +1,6 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo de Respuesta Serial Inmediata (Sin bloqueos de arranque)
+# Bucle Continuo con Animación OLED de Osciloscopio + Pre-Asignación de Memoria PCM (Zero RAM Alloc Fail)
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
 import machine
@@ -11,6 +11,7 @@ import struct
 import sys
 import math
 import uselect
+import gc
 
 def safe_flush():
     """Función de flush seguro compatible con MicroPython."""
@@ -37,6 +38,13 @@ I2S_SPK_SD  = 7
 SAMPLE_RATE = 16000
 RECORD_SECS = 3
 BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS
+
+# Pre-asignación de Búfer Global en RAM para evitar fragmentación de memoria (Zero RAM Allocation Error)
+gc.collect()
+AUDIO_RAM = bytearray(BUFFER_SIZE_16BIT)
+READ_BUF = bytearray(512)
+TEMP_BUF = bytearray(256)
+TONE_BUF = bytearray(SAMPLE_RATE * 2)
 
 # ------------------------------------------------------------------------------
 # Inicialización OLED SSD1306
@@ -191,14 +199,13 @@ def reproducir_tono_prueba_audio():
         safe_flush()
         return
 
-    tone_buf = bytearray(SAMPLE_RATE * 2)
     freq = 440
     amplitude = 12000
     for i in range(SAMPLE_RATE):
         sample = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
-        struct.pack_into("<h", tone_buf, i * 2, sample)
+        struct.pack_into("<h", TONE_BUF, i * 2, sample)
     
-    audio_out.write(tone_buf)
+    audio_out.write(TONE_BUF)
     time.sleep(0.1)
     sys.stdout.write("AUDIO_TEST_OK\n")
     safe_flush()
@@ -209,33 +216,33 @@ def grabar_y_transmitir_mic():
         safe_flush()
         return
 
-    audio_ram = bytearray(BUFFER_SIZE_16BIT)
-    read_buf = bytearray(512)
+    gc.collect()
     
-    temp = bytearray(256)
+    # Limpiar búfer previo
     for _ in range(5):
-        audio_in.readinto(temp)
+        audio_in.readinto(TEMP_BUF)
 
     bytes_written = 0
     while bytes_written < BUFFER_SIZE_16BIT:
-        num_read = audio_in.readinto(read_buf)
+        num_read = audio_in.readinto(READ_BUF)
         if num_read > 0:
             num_samples = num_read // 4
             for s_idx in range(num_samples):
                 if bytes_written >= BUFFER_SIZE_16BIT:
                     break
-                val_32 = struct.unpack("<i", read_buf[s_idx*4 : (s_idx+1)*4])[0]
+                val_32 = struct.unpack("<i", READ_BUF[s_idx*4 : (s_idx+1)*4])[0]
                 val_16 = val_32 >> 16
-                struct.pack_into("<h", audio_ram, bytes_written, val_16)
+                struct.pack_into("<h", AUDIO_RAM, bytes_written, val_16)
                 bytes_written += 2
                 
-    sys.stdout.write(f"MIC_DATA:{len(audio_ram)}\n")
+    sys.stdout.write(f"MIC_DATA:{len(AUDIO_RAM)}\n")
     safe_flush()
     if hasattr(sys.stdout, 'buffer'):
-        sys.stdout.buffer.write(audio_ram)
+        sys.stdout.buffer.write(AUDIO_RAM)
     else:
-        sys.stdout.write(audio_ram)
+        sys.stdout.write(AUDIO_RAM)
     safe_flush()
+    gc.collect()
 
 # ------------------------------------------------------------------------------
 # Bucle Principal de Control Serial e Interrupción Inmediata
@@ -248,7 +255,6 @@ def main():
     frame_counter = 0
     mostrar_idle()
     
-    # Notificación de listo al abrir puerto
     sys.stdout.write("[ESP32-S3] READY\n")
     safe_flush()
 
