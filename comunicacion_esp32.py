@@ -1,6 +1,6 @@
 """
 Módulo de Comunicación PC <-> ESP32-S3 (Interfaz Física)
-Conexión exclusiva a COM5 sin interferir con la ESP32-CAM (COM4).
+Conexión exclusiva a COM5 con reintentos y trazabilidad transparente.
 """
 import time
 import serial
@@ -34,20 +34,34 @@ class ComunicacionESP32:
                     self.serial_conn.close()
 
                 self.serial_conn = serial.Serial(self.puerto, self.baudrate, timeout=2)
-                time.sleep(0.3)
+                time.sleep(0.5)
                 self.serial_conn.reset_input_buffer()
                 self.serial_conn.reset_output_buffer()
 
-                # Ejecutar PING de prueba
-                if self.callback_log:
-                    self.callback_log(f"TX ➔ PING")
-                self.serial_conn.write(b"PING\n")
-                self.serial_conn.flush()
-                res = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
-                if self.callback_log and res:
-                    self.callback_log(f"RX ◄ {res}")
+                # Reintentar PING hasta 3 veces para estabilizar la línea USB CDC
+                confirmado = False
+                for intengo in range(3):
+                    if self.callback_log:
+                        self.callback_log("TX ➔ PING")
+                    self.serial_conn.write(b"\r\nPING\r\n")
+                    self.serial_conn.flush()
 
-                if "PONG" in res or self.serial_conn.is_open:
+                    t0 = time.time()
+                    res = ""
+                    while time.time() - t0 < 1.5:
+                        if self.serial_conn.in_waiting > 0:
+                            res += self.serial_conn.read_all().decode('utf-8', errors='ignore')
+                            if "PONG" in res or "READY" in res:
+                                confirmado = True
+                                break
+                        time.sleep(0.1)
+                    
+                    if confirmado:
+                        if self.callback_log:
+                            self.callback_log("RX ◄ PONG")
+                        break
+
+                if confirmado:
                     self.conectado = True
                     if self.callback_log:
                         self.callback_log(f"[COM] Conexión física verificada en {self.puerto}.")
@@ -55,7 +69,7 @@ class ComunicacionESP32:
                 else:
                     self.conectado = False
                     if self.callback_log:
-                        self.callback_log(f"[COM ERROR] {self.puerto} no respondió PONG.")
+                        self.callback_log(f"[COM ERROR] {self.puerto} abrió pero no respondió PONG. (Firmware main.py no activo en chip).")
                     return False, self.puerto
             except serial.SerialException as se:
                 self.conectado = False
@@ -118,14 +132,14 @@ class ComunicacionESP32:
                 self.serial_conn.flush()
 
                 inicio = time.time()
-                while time.time() - inicio < 14:
+                while time.time() - inicio < 6:
                     if self.serial_conn.in_waiting > 0:
                         linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
-                        if self.callback_log:
+                        if self.callback_log and linea:
                             self.callback_log(f"RX ◄ {linea}")
                         if "OLED_TEST_OK" in linea:
                             return True, "OLED_TEST_OK"
-                    time.sleep(0.1)
+                    time.sleep(0.05)
 
                 return False, "TIMEOUT OLED_TEST"
             except Exception as e:
@@ -145,14 +159,14 @@ class ComunicacionESP32:
                 self.serial_conn.flush()
 
                 inicio = time.time()
-                while time.time() - inicio < 5:
+                while time.time() - inicio < 4:
                     if self.serial_conn.in_waiting > 0:
                         linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
-                        if self.callback_log:
+                        if self.callback_log and linea:
                             self.callback_log(f"RX ◄ {linea}")
                         if "AUDIO_TEST_OK" in linea:
                             return True, "AUDIO_TEST_OK"
-                    time.sleep(0.1)
+                    time.sleep(0.05)
 
                 return False, "TIMEOUT AUDIO_TEST"
             except Exception as e:
@@ -176,7 +190,7 @@ class ComunicacionESP32:
                 while time.time() - inicio < 6:
                     if self.serial_conn.in_waiting > 0:
                         linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
-                        if self.callback_log:
+                        if self.callback_log and linea:
                             self.callback_log(f"RX ◄ {linea}")
                         if linea.startswith("MIC_DATA:"):
                             bytes_esperados = int(linea.split(":")[1])
