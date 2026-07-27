@@ -626,9 +626,14 @@ class AsistenteApp:
         scrollbar.pack(side="right", fill="y")
 
         try:
-            from base_conocimiento.db import sqlite_db
-            conceptos = sqlite_db.obtener_todos_conceptos()
-            reglas = sqlite_db.obtener_todas_reglas()
+            from conocimiento.database import get_connection
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre, definicion FROM conceptos")
+            conceptos = [dict(row) for row in cursor.fetchall()]
+            cursor.execute("SELECT condicion, conclusion FROM reglas")
+            reglas = [dict(row) for row in cursor.fetchall()]
+            conn.close()
 
             ttk.Label(scrollable_frame, text="💡 CONCEPTOS FINANCIEROS DISPONIBLES", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(10, 5))
 

@@ -1,17 +1,17 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Animación OLED de Osciloscopio + Auto-Prueba
+# Bucle Continuo con Animación OLED de Osciloscopio + Ventana de Grabación 4s (Pre-Asignación 128KB RAM)
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
-# pyrefly: ignore [missing-import]
-import machine
-from machine import Pin, I2S
-import ssd1306
+import machine  # pyrefly: ignore [missing-import] # type: ignore
+from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
+import ssd1306  # pyrefly: ignore [missing-import] # type: ignore
 import time
 import struct
 import sys
 import math
-import uselect
+import uselect  # pyrefly: ignore [missing-import] # type: ignore
+import gc
 
 def safe_flush():
     """Función de flush seguro compatible con MicroPython."""
@@ -36,8 +36,15 @@ I2S_SPK_WS  = 16
 I2S_SPK_SD  = 7
 
 SAMPLE_RATE = 16000
-RECORD_SECS = 3
-BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS
+RECORD_SECS = 4
+BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS  # 128,000 bytes (4 segundos de grabación de voz)
+
+# Pre-asignación Estática de Búfer Global en RAM al arrancar el módulo (Evita memory allocation failed)
+gc.collect()
+AUDIO_RAM = bytearray(BUFFER_SIZE_16BIT)
+READ_BUF  = bytearray(512)
+TEMP_BUF  = bytearray(256)
+TONE_BUF  = bytearray(SAMPLE_RATE * 2)
 
 # ------------------------------------------------------------------------------
 # Inicialización OLED SSD1306
@@ -51,7 +58,7 @@ except Exception as e:
 
 # Apagar NeoPixels integrados
 try:
-    import neopixel
+    import neopixel  # pyrefly: ignore [missing-import] # type: ignore
     for p in [48, 38, 8]:
         np = neopixel.NeoPixel(Pin(p), 1)
         np[0] = (0, 0, 0)
@@ -62,29 +69,37 @@ except Exception:
 # ------------------------------------------------------------------------------
 # Canales Audio I2S (0 RX: Mic / 1 TX: Bocina)
 # ------------------------------------------------------------------------------
-audio_in = I2S(
-    0,
-    sck=Pin(I2S_MIC_SCK),
-    ws=Pin(I2S_MIC_WS),
-    sd=Pin(I2S_MIC_SD),
-    mode=I2S.RX,
-    bits=32,
-    format=I2S.MONO,
-    rate=SAMPLE_RATE,
-    ibuf=1024
-)
+audio_in = None
+try:
+    audio_in = I2S(
+        0,
+        sck=Pin(I2S_MIC_SCK),
+        ws=Pin(I2S_MIC_WS),
+        sd=Pin(I2S_MIC_SD),
+        mode=I2S.RX,
+        bits=32,
+        format=I2S.MONO,
+        rate=SAMPLE_RATE,
+        ibuf=1024
+    )
+except Exception as e_mic:
+    sys.stdout.write(f"[MIC ERR] {e_mic}\n")
 
-audio_out = I2S(
-    1,
-    sck=Pin(I2S_SPK_SCK),
-    ws=Pin(I2S_SPK_WS),
-    sd=Pin(I2S_SPK_SD),
-    mode=I2S.TX,
-    bits=16,
-    format=I2S.MONO,
-    rate=SAMPLE_RATE,
-    ibuf=1024
-)
+audio_out = None
+try:
+    audio_out = I2S(
+        1,
+        sck=Pin(I2S_SPK_SCK),
+        ws=Pin(I2S_SPK_WS),
+        sd=Pin(I2S_SPK_SD),
+        mode=I2S.TX,
+        bits=16,
+        format=I2S.MONO,
+        rate=SAMPLE_RATE,
+        ibuf=1024
+    )
+except Exception as e_spk:
+    sys.stdout.write(f"[SPK ERR] {e_spk}\n")
 
 # ------------------------------------------------------------------------------
 # Funciones de Animación OLED estilo Osciloscopio
@@ -128,7 +143,6 @@ def animacion_procesando(frame):
     oled.text("⚙ PROCESANDO", 12, 12, 1)
     dots = "." * ((frame % 4) + 1)
     oled.text(f"Pensando{dots}", 18, 30, 1)
-    # Mini pulso de osciloscopio abajo
     animacion_osciloscopio("⚙ PROCESANDO", frame, amplitud=6, frec=0.10)
 
 def animacion_respondiendo(frame):
@@ -148,7 +162,6 @@ def mostrar_idle():
     oled.rect(0, 0, 128, 64, 1)
     oled.text("ASISTENTE FIN.", 8, 15, 1)
     oled.text("Listo en PC", 18, 32, 1)
-    # Trazo suave en idle
     for x in range(10, 118, 4):
         y = 52 + int(3 * math.sin(x * 0.1))
         oled.pixel(x, y, 1)
@@ -158,7 +171,7 @@ def mostrar_idle():
 # Pruebas de Hardware Físicas
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
-    sys.stdout.write("[SELF-TEST] Probando animaciones OLED (Osciloscopio)...\n")
+    sys.stdout.write("[TEST] OLED Secuencia...\n")
     safe_flush()
     estados = [
         ("INICIANDO", animacion_iniciando),
@@ -170,60 +183,69 @@ def ejecutar_test_oled_secuencia():
     for nombre, func in estados:
         t_start = time.time()
         f = 0
-        while time.time() - t_start < 1.2:
+        while time.time() - t_start < 1.0:
             func(f)
             f += 1
-            time.sleep(0.06)
+            time.sleep(0.05)
     mostrar_idle()
     sys.stdout.write("OLED_TEST_OK\n")
     safe_flush()
 
 def reproducir_tono_prueba_audio():
-    sys.stdout.write("[SELF-TEST] Emitiendo tono en bocina MAX98357A...\n")
+    sys.stdout.write("[TEST] Reproduciendo audio...\n")
     safe_flush()
-    tone_buf = bytearray(SAMPLE_RATE * 2)
+    if not audio_out:
+        sys.stdout.write("AUDIO_TEST_ERR\n")
+        safe_flush()
+        return
+
     freq = 440
     amplitude = 12000
     for i in range(SAMPLE_RATE):
         sample = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
-        struct.pack_into("<h", tone_buf, i * 2, sample)
+        struct.pack_into("<h", TONE_BUF, i * 2, sample)
     
-    audio_out.write(tone_buf)
+    audio_out.write(TONE_BUF)
     time.sleep(0.1)
     sys.stdout.write("AUDIO_TEST_OK\n")
     safe_flush()
 
 def grabar_y_transmitir_mic():
-    audio_ram = bytearray(BUFFER_SIZE_16BIT)
-    read_buf = bytearray(512)
+    if not audio_in:
+        sys.stdout.write("MIC_DATA:0\n")
+        safe_flush()
+        return
+
+    gc.collect()
     
-    temp = bytearray(256)
+    # Limpiar búfer previo de la entrada I2S
     for _ in range(5):
-        audio_in.readinto(temp)
+        audio_in.readinto(TEMP_BUF)
 
     bytes_written = 0
     while bytes_written < BUFFER_SIZE_16BIT:
-        num_read = audio_in.readinto(read_buf)
+        num_read = audio_in.readinto(READ_BUF)
         if num_read > 0:
             num_samples = num_read // 4
             for s_idx in range(num_samples):
                 if bytes_written >= BUFFER_SIZE_16BIT:
                     break
-                val_32 = struct.unpack("<i", read_buf[s_idx*4 : (s_idx+1)*4])[0]
+                val_32 = struct.unpack("<i", READ_BUF[s_idx*4 : (s_idx+1)*4])[0]
                 val_16 = val_32 >> 16
-                struct.pack_into("<h", audio_ram, bytes_written, val_16)
+                struct.pack_into("<h", AUDIO_RAM, bytes_written, val_16)
                 bytes_written += 2
                 
-    sys.stdout.write(f"MIC_DATA:{len(audio_ram)}\n")
+    sys.stdout.write(f"MIC_DATA:{len(AUDIO_RAM)}\n")
     safe_flush()
     if hasattr(sys.stdout, 'buffer'):
-        sys.stdout.buffer.write(audio_ram)
+        sys.stdout.buffer.write(AUDIO_RAM)
     else:
-        sys.stdout.write(audio_ram)
+        sys.stdout.write(AUDIO_RAM)
     safe_flush()
+    gc.collect()
 
 # ------------------------------------------------------------------------------
-# Bucle Principal de Control Serial y Polling
+# Bucle Principal de Control Serial e Interrupción Inmediata
 # ------------------------------------------------------------------------------
 def main():
     poll_obj = uselect.poll()
@@ -232,20 +254,13 @@ def main():
     estado_actual = "IDLE"
     frame_counter = 0
     mostrar_idle()
-    sys.stdout.write("[ESP32-S3] Firmware listo en bucle infinito.\n")
+    
+    sys.stdout.write("[ESP32-S3] READY\n")
     safe_flush()
-
-    # Auto-prueba de encendido (OLED Osciloscopio + Audio)
-    try:
-        ejecutar_test_oled_secuencia()
-        reproducir_tono_prueba_audio()
-    except Exception as ex_init:
-        sys.stdout.write(f"[AUTO-TEST ERR] {ex_init}\n")
-        safe_flush()
 
     while True:
         try:
-            events = poll_obj.poll(50)
+            events = poll_obj.poll(40)
             for obj, flag in events:
                 if flag & uselect.POLLIN:
                     linea = sys.stdin.readline().strip()
@@ -282,11 +297,11 @@ def main():
             else:
                 mostrar_idle()
 
-            time.sleep(0.05)
+            time.sleep(0.04)
         except Exception as err:
             sys.stdout.write(f"[MAIN ERR] {err}\n")
             safe_flush()
-            time.sleep(0.5)
+            time.sleep(0.2)
 
 if __name__ == "__main__":
     main()
