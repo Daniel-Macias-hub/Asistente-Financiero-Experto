@@ -1,0 +1,260 @@
+# ==============================================================================
+# FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
+# Bucle Continuo con Poll de sys.stdin / Aislamiento del REPL
+# Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
+# ==============================================================================
+import machine
+from machine import Pin, I2S
+import ssd1306
+import time
+import struct
+import sys
+import math
+import uselect
+
+# ------------------------------------------------------------------------------
+# Configuración de Pines (PCB MRD085A)
+# ------------------------------------------------------------------------------
+OLED_SDA = 41
+OLED_SCL = 42
+
+I2S_MIC_SCK = 5
+I2S_MIC_WS  = 4
+I2S_MIC_SD  = 6
+
+I2S_SPK_SCK = 15
+I2S_SPK_WS  = 16
+I2S_SPK_SD  = 7
+
+SAMPLE_RATE = 16000
+RECORD_SECS = 3
+BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS
+
+# ------------------------------------------------------------------------------
+# Inicialización OLED SSD1306
+# ------------------------------------------------------------------------------
+oled = None
+try:
+    i2c = machine.SoftI2C(scl=Pin(OLED_SCL), sda=Pin(OLED_SDA))
+    oled = ssd1306.SSD1306_I2C(128, 64, i2c)
+except Exception as e:
+    sys.stdout.write(f"[OLED ERR] {e}\n")
+
+# Apagar NeoPixels integrados
+try:
+    import neopixel
+    for p in [48, 38, 8]:
+        np = neopixel.NeoPixel(Pin(p), 1)
+        np[0] = (0, 0, 0)
+        np.write()
+except Exception:
+    pass
+
+# ------------------------------------------------------------------------------
+# Canales Audio I2S (0 RX: Mic / 1 TX: Bocina)
+# ------------------------------------------------------------------------------
+audio_in = I2S(
+    0,
+    sck=Pin(I2S_MIC_SCK),
+    ws=Pin(I2S_MIC_WS),
+    sd=Pin(I2S_MIC_SD),
+    mode=I2S.RX,
+    bits=32,
+    format=I2S.MONO,
+    rate=SAMPLE_RATE,
+    ibuf=1024
+)
+
+audio_out = I2S(
+    1,
+    sck=Pin(I2S_SPK_SCK),
+    ws=Pin(I2S_SPK_WS),
+    sd=Pin(I2S_SPK_SD),
+    mode=I2S.TX,
+    bits=16,
+    format=I2S.MONO,
+    rate=SAMPLE_RATE,
+    ibuf=1024
+)
+
+# ------------------------------------------------------------------------------
+# Funciones de Animación OLED
+# ------------------------------------------------------------------------------
+def animacion_iniciando(paso):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("INICIANDO...", 18, 15, 1)
+    ancho = ((paso % 10) + 1) * 10
+    oled.rect(14, 38, 100, 10, 1)
+    oled.fill_rect(14, 38, ancho, 10, 1)
+    oled.show()
+
+def animacion_escuchando(frame):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("🔴 ESCUCHANDO", 10, 12, 1)
+    for i in range(5):
+        h = 8 + (abs((frame + i * 2) % 8 - 4) * 4)
+        x = 28 + (i * 14)
+        oled.fill_rect(x, 48 - h, 8, h, 1)
+    oled.show()
+
+def animacion_procesando(frame):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("⚙ PROCESANDO", 12, 15, 1)
+    dots = "." * ((frame % 4) + 1)
+    oled.text(f"Pensando{dots}", 18, 38, 1)
+    oled.show()
+
+def animacion_respondiendo(frame):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("🔊 RESPONDIENDO", 8, 12, 1)
+    for x in range(10, 118, 6):
+        h = int(8 * (1 + (x % 3 == frame % 3)))
+        oled.fill_rect(x, 38 - (h // 2), 4, h, 1)
+    oled.show()
+
+def animacion_error(mensaje="ERR SISTEMA"):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("❌ ERROR", 30, 15, 1)
+    oled.text(mensaje[:14], 8, 38, 1)
+    oled.show()
+
+def mostrar_idle():
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("ASISTENTE FIN.", 8, 18, 1)
+    oled.text("Listo en PC", 18, 38, 1)
+    oled.show()
+
+# ------------------------------------------------------------------------------
+# Pruebas de Hardware Físicas
+# ------------------------------------------------------------------------------
+def ejecutar_test_oled_secuencia():
+    estados = [
+        ("INICIANDO", animacion_iniciando),
+        ("ESCUCHANDO", animacion_escuchando),
+        ("PROCESANDO", animacion_procesando),
+        ("RESPONDIENDO", animacion_respondiendo),
+        ("ERROR", lambda p: animacion_error("TEST ERROR"))
+    ]
+    for nombre, func in estados:
+        t_start = time.time()
+        f = 0
+        while time.time() - t_start < 2.0:
+            func(f)
+            f += 1
+            time.sleep(0.08)
+    mostrar_idle()
+    sys.stdout.write("OLED_TEST_OK\n")
+    sys.stdout.flush()
+
+def reproducir_tono_prueba_audio():
+    tone_buf = bytearray(SAMPLE_RATE * 2 * 2)
+    freq = 440
+    amplitude = 12000
+    for i in range(SAMPLE_RATE * 2):
+        sample = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
+        struct.pack_into("<h", tone_buf, i * 2, sample)
+    
+    audio_out.write(tone_buf)
+    time.sleep(0.1)
+    sys.stdout.write("AUDIO_TEST_OK\n")
+    sys.stdout.flush()
+
+def grabar_y_transmitir_mic():
+    audio_ram = bytearray(BUFFER_SIZE_16BIT)
+    read_buf = bytearray(512)
+    
+    temp = bytearray(256)
+    for _ in range(5):
+        audio_in.readinto(temp)
+
+    bytes_written = 0
+    while bytes_written < BUFFER_SIZE_16BIT:
+        num_read = audio_in.readinto(read_buf)
+        if num_read > 0:
+            num_samples = num_read // 4
+            for s_idx in range(num_samples):
+                if bytes_written >= BUFFER_SIZE_16BIT:
+                    break
+                val_32 = struct.unpack("<i", read_buf[s_idx*4 : (s_idx+1)*4])[0]
+                val_16 = val_32 >> 16
+                struct.pack_into("<h", audio_ram, bytes_written, val_16)
+                bytes_written += 2
+                
+    sys.stdout.write(f"MIC_DATA:{len(audio_ram)}\n")
+    sys.stdout.flush()
+    sys.stdout.buffer.write(audio_ram)
+    sys.stdout.flush()
+
+# ------------------------------------------------------------------------------
+# Bucle Principal de Control Serial y Polling
+# ------------------------------------------------------------------------------
+def main():
+    poll_obj = uselect.poll()
+    poll_obj.register(sys.stdin, uselect.POLLIN)
+
+    estado_actual = "IDLE"
+    frame_counter = 0
+    mostrar_idle()
+    sys.stdout.write("[ESP32-S3] Firmware listo en bucle infinito.\n")
+    sys.stdout.flush()
+
+    while True:
+        try:
+            # Polling con timeout de 50ms para no bloquear la animación OLED
+            events = poll_obj.poll(50)
+            for obj, flag in events:
+                if flag & uselect.POLLIN:
+                    linea = sys.stdin.readline().strip()
+                    if not linea:
+                        continue
+                    
+                    if linea == "PING":
+                        sys.stdout.write("PONG\n")
+                        sys.stdout.flush()
+                    elif linea == "OLED_TEST":
+                        ejecutar_test_oled_secuencia()
+                    elif linea == "AUDIO_TEST":
+                        reproducir_tono_prueba_audio()
+                    elif linea == "MIC_START":
+                        grabar_y_transmitir_mic()
+                    elif linea.startswith("STATE:"):
+                        partes = linea.split(":")
+                        if len(partes) >= 2:
+                            estado_actual = partes[1].upper()
+                            sys.stdout.write(f"STATE_ACK:{estado_actual}\n")
+                            sys.stdout.flush()
+
+            frame_counter += 1
+            if estado_actual == "INICIANDO":
+                animacion_iniciando(frame_counter)
+            elif estado_actual == "ESCUCHANDO":
+                animacion_escuchando(frame_counter)
+            elif estado_actual == "PROCESANDO":
+                animacion_procesando(frame_counter)
+            elif estado_actual == "RESPONDIENDO":
+                animacion_respondiendo(frame_counter)
+            elif estado_actual == "ERROR":
+                animacion_error("FALLO SISTEMA")
+            else:
+                mostrar_idle()
+
+            time.sleep(0.05)
+        except Exception as err:
+            sys.stdout.write(f"[MAIN ERR] {err}\n")
+            sys.stdout.flush()
+            time.sleep(0.5)
+
+if __name__ == "__main__":
+    main()
