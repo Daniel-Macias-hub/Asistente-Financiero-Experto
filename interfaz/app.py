@@ -56,6 +56,7 @@ class AsistenteApp:
         self.root.configure(bg=BG_MAIN)
 
         self.cam_img_tk = None
+        self.stream_activo = False
         self.configurar_estilos()
         self.crear_widgets()
 
@@ -182,6 +183,8 @@ class AsistenteApp:
         f_btns_cam = ttk.Frame(c_cam, style="Card.TFrame")
         f_btns_cam.pack(fill='x', padx=12, pady=6)
         ttk.Button(f_btns_cam, text="📷 Capturar Foto", command=self.probar_camara_real).pack(side=tk.LEFT, padx=2)
+        self.btn_stream = ttk.Button(f_btns_cam, text="📹 Video en Vivo", command=self.toggle_video_stream)
+        self.btn_stream.pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_cam, text="📸 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=2)
 
         # --- Panel Derecho: Visor de Cámara Embebido en Canvas ---
@@ -317,6 +320,58 @@ class AsistenteApp:
                 self.agregar_log_consola(f"[CÁMARA] ✗ Error HTTP: {e}")
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def toggle_video_stream(self):
+        """Activa o desactiva la transmisión de video en tiempo real de la ESP32-CAM."""
+        if self.stream_activo:
+            self.stream_activo = False
+            self.btn_stream.configure(text="📹 Video en Vivo")
+            self.agregar_log_consola("[CÁMARA] Transmisión de video en tiempo real detenida.")
+        else:
+            self.stream_activo = True
+            self.btn_stream.configure(text="⏹️ Detener Video")
+            self.agregar_log_consola("[CÁMARA] Iniciando transmisión de video en tiempo real...")
+            threading.Thread(target=self._bucle_video_stream, daemon=True).start()
+
+    def _bucle_video_stream(self):
+        url = self.entry_ip_cam.get().strip()
+        frames_count = 0
+        t_start_fps = time.time()
+        
+        while self.stream_activo:
+            t0 = time.time()
+            try:
+                r = requests.get(url, timeout=2)
+                t_trans = (time.time() - t0) * 1000
+                if r.status_code == 200:
+                    size_kb = len(r.content) / 1024.0
+                    arr = np.frombuffer(r.content, np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        h, w, _ = img.shape
+                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                        self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+
+                        frames_count += 1
+                        elapsed_fps = time.time() - t_start_fps
+                        fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
+
+                        def _update_gui():
+                            self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                            self.lbl_metrics_cam.configure(text=f"Res: {w}x{h} px | Size: {size_kb:.1f} KB | Latencia: {t_trans:.0f} ms | FPS: {fps:.1f}")
+                            self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps:.1f} FPS)", foreground=CLR_GREEN)
+                            self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps:.1f} FPS)", foreground=CLR_GREEN)
+
+                        self.root.after(0, _update_gui)
+                time.sleep(0.06)
+            except Exception as e:
+                self.agregar_log_consola(f"[STREAM ERR] {e}")
+                time.sleep(1.0)
+
+        def _reset_gui():
+            self.lbl_status_cam.configure(text="Estado: ⚪ IDLE", foreground=TEXT_MUTED)
+        self.root.after(0, _reset_gui)
 
     def escanear_cripto_pipeline(self):
         def _run():

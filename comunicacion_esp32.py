@@ -1,6 +1,6 @@
 """
 Módulo de Comunicación PC <-> ESP32-S3 (Interfaz Física)
-Protocolo Serial Real con Trazabilidad TX ➔ y RX ◄.
+Conexión exclusiva a COM5 sin interferir con la ESP32-CAM (COM4).
 """
 import time
 import serial
@@ -23,8 +23,8 @@ class ComunicacionESP32:
         puertos = serial.tools.list_ports.comports()
         return [p.device for p in puertos] if puertos else ["COM5"]
 
-    def conectar(self, puerto=None):
-        """Establece conexión serial en un puerto específico."""
+    def conectar(self, puerto="COM5"):
+        """Establece conexión serial exclusivamente en el puerto indicado (defecto COM5)."""
         if puerto:
             self.puerto = puerto
             
@@ -57,32 +57,22 @@ class ComunicacionESP32:
                     if self.callback_log:
                         self.callback_log(f"[COM ERROR] {self.puerto} no respondió PONG.")
                     return False, self.puerto
+            except serial.SerialException as se:
+                self.conectado = False
+                msg = str(se)
+                if "PermissionError" in msg or "Access is denied" in msg:
+                    err_hint = f"[COM ERROR] El puerto {self.puerto} está ocupado por Thonny IDE. Presiona 'Stop' o cierra Thonny."
+                else:
+                    err_hint = f"[COM ERROR] No se pudo abrir {self.puerto}: {se}"
+                
+                if self.callback_log:
+                    self.callback_log(err_hint)
+                return False, self.puerto
             except Exception as e:
                 self.conectado = False
                 if self.callback_log:
-                    self.callback_log(f"[COM ERROR] No se pudo abrir {self.puerto}: {e}")
+                    self.callback_log(f"[COM ERROR] Fallo inesperado en {self.puerto}: {e}")
                 return False, self.puerto
-
-    def auto_conectar(self, puerto_preferido=None):
-        """
-        Intenta conectar al puerto preferido. Si falla o está ocupado (ej. COM4 en Arduino IDE),
-        escanea automáticamente los demás puertos disponibles (ej. COM5) hasta encontrar el ESP32-S3.
-        """
-        puertos = self.obtener_puertos_disponibles()
-        if puerto_preferido and puerto_preferido in puertos:
-            puertos.remove(puerto_preferido)
-            puertos.insert(0, puerto_preferido)
-        elif puerto_preferido:
-            puertos.insert(0, puerto_preferido)
-
-        for p in puertos:
-            if self.callback_log:
-                self.callback_log(f"[CONEXIÓN] Verificando puerto {p}...")
-            exito, _ = self.conectar(p)
-            if exito:
-                return True, p
-
-        return False, None
 
     def desconectar(self):
         """Cierra la conexión serial."""
