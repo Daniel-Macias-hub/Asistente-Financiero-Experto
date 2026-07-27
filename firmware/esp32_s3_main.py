@@ -1,6 +1,6 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Poll de sys.stdin / Aislamiento del REPL
+# Bucle Continuo con Poll de sys.stdin / Compatibilidad MicroPython sin sys.stdout.flush
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
 import machine
@@ -11,6 +11,14 @@ import struct
 import sys
 import math
 import uselect
+
+def safe_flush():
+    """Función de flush seguro compatible con MicroPython."""
+    if hasattr(sys.stdout, 'flush'):
+        try:
+            sys.stdout.flush()
+        except Exception:
+            pass
 
 # ------------------------------------------------------------------------------
 # Configuración de Pines (PCB MRD085A)
@@ -156,7 +164,7 @@ def ejecutar_test_oled_secuencia():
             time.sleep(0.08)
     mostrar_idle()
     sys.stdout.write("OLED_TEST_OK\n")
-    sys.stdout.flush()
+    safe_flush()
 
 def reproducir_tono_prueba_audio():
     tone_buf = bytearray(SAMPLE_RATE * 2 * 2)
@@ -169,7 +177,7 @@ def reproducir_tono_prueba_audio():
     audio_out.write(tone_buf)
     time.sleep(0.1)
     sys.stdout.write("AUDIO_TEST_OK\n")
-    sys.stdout.flush()
+    safe_flush()
 
 def grabar_y_transmitir_mic():
     audio_ram = bytearray(BUFFER_SIZE_16BIT)
@@ -193,9 +201,12 @@ def grabar_y_transmitir_mic():
                 bytes_written += 2
                 
     sys.stdout.write(f"MIC_DATA:{len(audio_ram)}\n")
-    sys.stdout.flush()
-    sys.stdout.buffer.write(audio_ram)
-    sys.stdout.flush()
+    safe_flush()
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout.buffer.write(audio_ram)
+    else:
+        sys.stdout.write(audio_ram)
+    safe_flush()
 
 # ------------------------------------------------------------------------------
 # Bucle Principal de Control Serial y Polling
@@ -208,7 +219,7 @@ def main():
     frame_counter = 0
     mostrar_idle()
     sys.stdout.write("[ESP32-S3] Firmware listo en bucle infinito.\n")
-    sys.stdout.flush()
+    safe_flush()
 
     while True:
         try:
@@ -222,7 +233,7 @@ def main():
                     
                     if linea == "PING":
                         sys.stdout.write("PONG\n")
-                        sys.stdout.flush()
+                        safe_flush()
                     elif linea == "OLED_TEST":
                         ejecutar_test_oled_secuencia()
                     elif linea == "AUDIO_TEST":
@@ -234,7 +245,7 @@ def main():
                         if len(partes) >= 2:
                             estado_actual = partes[1].upper()
                             sys.stdout.write(f"STATE_ACK:{estado_actual}\n")
-                            sys.stdout.flush()
+                            safe_flush()
 
             frame_counter += 1
             if estado_actual == "INICIANDO":
@@ -253,7 +264,7 @@ def main():
             time.sleep(0.05)
         except Exception as err:
             sys.stdout.write(f"[MAIN ERR] {err}\n")
-            sys.stdout.flush()
+            safe_flush()
             time.sleep(0.5)
 
 if __name__ == "__main__":
