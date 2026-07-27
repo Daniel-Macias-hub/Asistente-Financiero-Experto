@@ -28,7 +28,7 @@ from audio.tts import hablar, detener_habla
 from audio.stt import escuchar_desde_pcm
 from conocimiento.database import get_connection
 from comunicacion_esp32 import esp32_comm
-from vision.detector_logo import DetectorORB
+from vision.detector_logo import DetectorCriptoUnificado
 
 # Paleta de Colores Profesional Slate/Esmeralda
 BG_MAIN     = "#0E1117"  # Slate muy oscuro
@@ -772,73 +772,110 @@ class AsistenteApp:
 
     def escanear_cripto_pipeline(self):
         def _run():
+
             self.agregar_log_consola("[PIPELINE IA] Iniciando escaneo de criptomoneda...")
             esp32_comm.enviar_comando_oled("PROCESANDO")
-            url = self.entry_ip_cam.get().strip()
-            
+
+            # Obtener frame: de RAM (stream activo) o petición HTTP
             frame = None
             if getattr(self, 'ultimo_frame_cv2', None) is not None and self.stream_activo:
                 frame = self.ultimo_frame_cv2.copy()
+                self.agregar_log_consola("[PIPELINE IA] Usando frame en RAM (stream activo)...")
             else:
+                _, capture_url, _ = self._get_cam_urls()
+                self.agregar_log_consola(f"[PIPELINE IA] Capturando fotograma desde {capture_url}...")
                 try:
-                    r = requests.get(url, timeout=5)
+                    r = requests.get(capture_url, timeout=6)
                     if r.status_code == 200:
                         arr = np.frombuffer(r.content, np.uint8)
                         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                 except Exception as e:
                     self.agregar_log_consola(f"[PIPELINE ERROR] {e}")
 
-            if frame is not None:
-                detector = DetectorORB()
-                detector.cargar_modelo()
-                cripto, conf = detector.detectar(frame)
-                
-                if cripto:
-                    activo = cripto.upper()
-                    conf_pct = conf * 100.0
-                    self.agregar_log_consola(f"[PIPELINE IA] Activo reconocido: '{activo}' (Confianza: {conf_pct:.1f}%)")
-                    
-                    # Anotar recuadro verde y etiqueta en la vista previa de la cámara
-                    img_annotated = frame.copy()
-                    h, w, _ = img_annotated.shape
-                    cv2.rectangle(img_annotated, (15, 15), (w-15, h-15), (0, 210, 135), 3)
-                    cv2.putText(img_annotated, f"{activo} ({conf_pct:.0f}%)", (25, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 210, 135), 2)
-                    
-                    img_rgb = cv2.cvtColor(img_annotated, cv2.COLOR_BGR2RGB)
-                    img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
-                    self.cam_img_tk = ImageTk.PhotoImage(img_pil)
-                    self.root.after(0, lambda: self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
+            if frame is None:
+                esp32_comm.enviar_comando_oled("ERROR")
+                self.agregar_log_consola("[PIPELINE ERROR] No se pudo obtener fotograma de la cámara.")
+                return
 
-                    resp, _ = generar_respuesta_precio(activo)
-                    self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
+            # Detectar con el sistema unificado (Gemini → ORB)
+            detector = DetectorCriptoUnificado()
+            cripto, conf, modo = detector.detectar(frame)
 
-                    esp32_comm.enviar_comando_oled("RESPONDIENDO")
-                    
-                    # Cambiar automáticamente a la pestaña "📈 Mercado en Tiempo Real" y desplegar datos
-                    def _update_ui_and_tab():
-                        self.notebook.select(self.tab_mercado)
-                        self.entry_ticker.delete(0, tk.END)
-                        self.entry_ticker.insert(0, activo)
-                        self.txt_mercado.configure(state='normal')
-                        self.txt_mercado.delete("1.0", tk.END)
-                        self.txt_mercado.insert(tk.END, f"{resp}\n\n💡 Usa el botón '🎙️ Hablar sobre este Activo' para consultar por voz el año de origen o precios históricos.")
-                        self.txt_mercado.configure(state='disabled')
-                        self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo}**.\nDesplegando análisis completo en pesos MXN y datos históricos en la pestaña de Mercado...\n\n{resp}", "bot")
+            modo_icon = "🧠 Gemini AI" if modo == "gemini" else "🔍 ORB local"
+            conf_pct = conf * 100.0
 
-                    self.root.after(0, _update_ui_and_tab)
-                    hablar(f"Criptomoneda identificada: {activo}. {resp.splitlines()[0] if resp else ''}")
-                    esp32_comm.enviar_comando_oled("IDLE")
-                else:
-                    esp32_comm.enviar_comando_oled("ERROR")
-                    msg_unrec = "No se reconoció un logotipo con suficiente certeza. Por favor enfoca bien el logotipo de Bitcoin, Dogecoin, Ethereum, Solana, Cardano, XRP o BNB ante la cámara."
-                    self.agregar_log_consola(f"[PIPELINE IA] ⚠️ {msg_unrec}")
-                    self.agregar_mensaje("Asistente Experto", f"⚠️ {msg_unrec}", "bot")
-                    hablar("No se reconoció la criptomoneda. Enfoca el logotipo centrado ante la cámara.")
+            if cripto:
+                activo_lower = cripto.lower()
+                # Mapear al nombre mostrable
+                from config import CRYPTO_MAP
+                info = CRYPTO_MAP.get(activo_lower, {})
+                symbol = info.get("symbol", activo_lower.upper())
+                nombre_display = activo_lower.upper()
+
+                self.agregar_log_consola(
+                    f"[PIPELINE IA] ✅ Activo: '{nombre_display}' ({symbol}) | "
+                    f"Confianza: {conf_pct:.1f}% | Modo: {modo_icon}")
+
+                # Anotar recuadro verde en el frame
+                img_ann = frame.copy()
+                h, w, _ = img_ann.shape
+                color_ann = (0, 210, 135)
+                cv2.rectangle(img_ann, (15, 15), (w-15, h-15), color_ann, 3)
+                cv2.putText(img_ann, f"{nombre_display} ({conf_pct:.0f}%) [{modo_icon}]",
+                            (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color_ann, 2)
+
+                img_rgb = cv2.cvtColor(img_ann, cv2.COLOR_BGR2RGB)
+                img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+                self.root.after(0, lambda: self.canvas_cam.delete("all") or
+                                self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
+
+                # Obtener datos de mercado
+                resp, _ = generar_respuesta_precio(symbol)
+                self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos de API'}")
+
+                esp32_comm.enviar_comando_oled("RESPONDIENDO")
+
+                def _update_ui():
+                    self.notebook.select(self.tab_mercado)
+                    self.entry_ticker.delete(0, tk.END)
+                    self.entry_ticker.insert(0, symbol)
+                    self.txt_mercado.configure(state='normal')
+                    self.txt_mercado.delete("1.0", tk.END)
+                    self.txt_mercado.insert(
+                        tk.END,
+                        f"{resp}\n\n"
+                        f"🧠 Detección: {modo_icon} | Confianza: {conf_pct:.1f}%\n"
+                        f"💡 Usa '🎤 Hablar sobre este Activo' para preguntar por voz sobre "
+                        f"historial, precio o creadores."
+                    )
+                    self.txt_mercado.configure(state='disabled')
+                    self.agregar_mensaje(
+                        "Asistente Experto",
+                        f"🔍 [Análisis Visual IA — {modo_icon}]: **{nombre_display}** detectado "
+                        f"con {conf_pct:.1f}% de confianza.\n\n{resp}",
+                        "bot"
+                    )
+
+                self.root.after(0, _update_ui)
+                hablar(f"Criptomoneda identificada: {nombre_display}. {resp.splitlines()[0] if resp else ''}")
+                esp32_comm.enviar_comando_oled("IDLE")
+
             else:
                 esp32_comm.enviar_comando_oled("ERROR")
-                self.agregar_log_consola("[PIPELINE ERROR] No se pudo obtener fotograma de la cámara ESP32-CAM.")
+                msg = (
+                    "No se reconoció un logotipo con suficiente certeza.\n"
+                    "Consejos:\n"
+                    "  • Centra el logo en la cámara (al menos 30% del encuadre)\n"
+                    "  • Evita reflejos o fondo muy oscuro\n"
+                    "  • Criptos soportadas: Bitcoin, Ethereum, Cardano, Solana, XRP, Dogecoin, BNB"
+                )
+                self.agregar_log_consola(f"[PIPELINE IA] ⚠️ No reconocido (modo: {modo_icon})")
+                self.agregar_mensaje("Asistente Experto", f"⚠️ {msg}", "bot")
+                hablar("No se reconoció la criptomoneda. Centra el logotipo ante la cámara.")
 
         threading.Thread(target=_run, daemon=True).start()
+
 
     # --------------------------------------------------------------------------
     # TAB 2: CHAT CONVERSACIONAL (ESTILO CHATGPT)
