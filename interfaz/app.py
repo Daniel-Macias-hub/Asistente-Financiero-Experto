@@ -381,20 +381,29 @@ class AsistenteApp:
             threading.Thread(target=_run, daemon=True).start()
 
     def abrir_visor_agrandado(self):
-        """Abre una ventana emergente de alta definición (800x532 px) para ver la cámara ampliada."""
+        """Abre una ventana emergente HD (800x532 px) con barra de control completa."""
         if self.window_agrandar and self.window_agrandar.winfo_exists():
             self.window_agrandar.lift()
             return
             
         self.window_agrandar = tk.Toplevel(self.root)
-        self.window_agrandar.title("📡 Visualizador de Cámara HD (Ampliado)")
-        self.window_agrandar.geometry("830x570")
+        self.window_agrandar.title("📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)")
+        self.window_agrandar.geometry("850x640")
         self.window_agrandar.configure(bg=BG_MAIN)
 
         ttk.Label(self.window_agrandar, text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)", font=FONT_SUB, foreground=CLR_GREEN).pack(pady=8)
-        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=532, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
+        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=480, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
         self.canvas_agrandar.pack(padx=10, pady=5)
-        self.canvas_agrandar.create_text(400, 266, text="Inicia 'Video en Vivo' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
+        self.canvas_agrandar.create_text(400, 240, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
+
+        # Barra de Control Integrada en la Ventana HD
+        f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
+        f_hd_ctrl.pack(fill='x', padx=15, pady=10)
+
+        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.capturar_foto).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="⚡ Encender/Apagar Flash", command=self.alternar_flash).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="❌ Cerrar Ventana", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
 
     def _bucle_video_stream(self):
         base_url = self.entry_ip_cam.get().strip()
