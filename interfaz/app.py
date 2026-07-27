@@ -24,7 +24,7 @@ from experto.finanzas_tiempo_real import obtener_datos_accion, generar_respuesta
 from entrenamiento.agregar_concepto import nuevo_concepto
 from entrenamiento.agregar_relacion import nueva_relacion
 from entrenamiento.agregar_regla import nueva_regla
-from audio.tts import hablar
+from audio.tts import hablar, detener_habla
 from audio.stt import escuchar_desde_pcm
 from conocimiento.database import get_connection
 from comunicacion_esp32 import esp32_comm
