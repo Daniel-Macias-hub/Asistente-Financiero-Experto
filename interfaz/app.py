@@ -57,6 +57,7 @@ class AsistenteApp:
 
         self.cam_img_tk = None
         self.stream_activo = False
+        self.flash_encendido = False
         self.configurar_estilos()
         self.crear_widgets()
 
@@ -182,9 +183,11 @@ class AsistenteApp:
 
         f_btns_cam = ttk.Frame(c_cam, style="Card.TFrame")
         f_btns_cam.pack(fill='x', padx=12, pady=6)
-        ttk.Button(f_btns_cam, text="📷 Capturar Foto", command=self.probar_camara_real).pack(side=tk.LEFT, padx=2)
+        ttk.Button(f_btns_cam, text="📷 Foto", command=self.probar_camara_real).pack(side=tk.LEFT, padx=2)
         self.btn_stream = ttk.Button(f_btns_cam, text="📹 Video en Vivo", command=self.toggle_video_stream)
         self.btn_stream.pack(side=tk.LEFT, padx=2)
+        self.btn_flash = ttk.Button(f_btns_cam, text="💡 Flash: OFF", command=self.toggle_flash_led)
+        self.btn_flash.pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_cam, text="📸 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=2)
 
         # --- Panel Derecho: Visor de Cámara Embebido en Canvas ---
@@ -332,6 +335,27 @@ class AsistenteApp:
             self.btn_stream.configure(text="⏹️ Detener Video")
             self.agregar_log_consola("[CÁMARA] Iniciando transmisión de video en tiempo real...")
             threading.Thread(target=self._bucle_video_stream, daemon=True).start()
+
+    def toggle_flash_led(self):
+        """Envía comando HTTP GET para encender o apagar el LED Flash de la ESP32-CAM en estado sólido (sin parpadeos)."""
+        base_url = self.entry_ip_cam.get().strip()
+        host_url = base_url.split("/capture")[0].split("/stream")[0]
+        
+        self.flash_encendido = not self.flash_encendido
+        nuevo_estado = 1 if self.flash_encendido else 0
+        led_url = f"{host_url}/led?state={nuevo_estado}"
+
+        def _run():
+            try:
+                r = requests.get(led_url, timeout=3)
+                if r.status_code == 200:
+                    txt = "💡 Flash: ON" if self.flash_encendido else "💡 Flash: OFF"
+                    self.root.after(0, lambda: self.btn_flash.configure(text=txt))
+                    self.agregar_log_consola(f"[FLASH LED] Luz LED {'ENCENDIDA (SÓLIDA)' if self.flash_encendido else 'APAGADA'}.")
+            except Exception as e:
+                self.agregar_log_consola(f"[FLASH LED ERR] {e}")
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _bucle_video_stream(self):
         base_url = self.entry_ip_cam.get().strip()

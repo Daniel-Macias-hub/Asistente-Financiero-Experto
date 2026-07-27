@@ -1,6 +1,7 @@
 /*
  * FIRMWARE ESP32-CAM (AI-Thinker OV2640)
- * ALTA VELOCIDAD (>25 FPS) - SIN PARPADEO DE LED FLASH - MJPEG STREAM (/stream & /capture)
+ * CONTROL MANUAL DE FLASH LED (/led?state=1/0)
+ * STREAM MJPEG Y FOTO CON ILUMINACIÓN FIJA SIN PARPADEO MOLESTO
  */
 #include "esp_camera.h"
 #include <WiFi.h>
@@ -35,14 +36,30 @@ static const char* _STREAM_BOUNDARY = "\r\n--" PART_BOUNDARY "\r\n";
 static const char* _STREAM_PART = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
 
 httpd_handle_t stream_httpd = NULL;
+bool flash_led_encendido = false; // Por defecto APAGADO para evitar parpadeos
 
-// Captura individual de fotografía JPEG sin flash
+// Control de Estado del LED Flash
+static esp_err_t led_handler(httpd_req_t *req) {
+    char buf[32];
+    if (httpd_req_get_url_query_str(req, buf, sizeof(buf)) == ESP_OK) {
+        char param[16];
+        if (httpd_query_key_value(buf, "state", param, sizeof(param)) == ESP_OK) {
+            int state = atoi(param);
+            flash_led_encendido = (state == 1);
+            digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
+        }
+    }
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, flash_led_encendido ? "LED ON" : "LED OFF", HTTPD_RESP_USE_STRLEN);
+}
+
+// Captura individual de fotografía JPEG
 static esp_err_t capture_handler(httpd_req_t *req) {
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
 
-    // LED Flash permanecera APAGADO siempre para evitar parpadeos
-    digitalWrite(FLASH_GPIO_NUM, LOW);
+    // Mantener estado constante de LED sin parpadeos
+    digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
     fb = esp_camera_fb_get();
 
     if (!fb) {
@@ -59,7 +76,7 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     return res;
 }
 
-// Stream MJPEG continuo a alta velocidad (>25 FPS)
+// Stream MJPEG continuo a alta velocidad sin parpadeo de LED
 static esp_err_t stream_handler(httpd_req_t *req) {
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
@@ -71,7 +88,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
     while (true) {
-        digitalWrite(FLASH_GPIO_NUM, LOW);
+        digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
         fb = esp_camera_fb_get();
         if (!fb) {
             res = ESP_FAIL;
@@ -109,9 +126,17 @@ void startCameraServer() {
         .user_ctx  = NULL
     };
 
+    httpd_uri_t led_uri = {
+        .uri       = "/led",
+        .method    = HTTP_GET,
+        .handler   = led_handler,
+        .user_ctx  = NULL
+    };
+
     if (httpd_start(&stream_httpd, &config) == ESP_OK) {
         httpd_register_uri_handler(stream_httpd, &capture_uri);
         httpd_register_uri_handler(stream_httpd, &stream_uri);
+        httpd_register_uri_handler(stream_httpd, &led_uri);
     }
 }
 
