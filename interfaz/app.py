@@ -320,40 +320,58 @@ class AsistenteApp:
         threading.Thread(target=_run, daemon=True).start()
 
     def probar_camara_real(self):
+        """Captura una foto (con o sin stream activo) y la muestra en el Dashboard + popup."""
         def _run():
-            url = self.entry_ip_cam.get().strip()
-            self.agregar_log_consola(f"[CÁMARA] Solicitando fotograma a {url}...")
-            t0 = time.time()
-            try:
-                r = requests.get(url, timeout=5)
-                t_trans = (time.time() - t0) * 1000
-                if r.status_code == 200:
-                    size_kb = len(r.content) / 1024.0
-                    arr = np.frombuffer(r.content, np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    h, w, _ = img.shape
-                    
-                    # Convertir a PIL y renderizar directamente dentro del Canvas de Tkinter
-                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
-                    self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+            img = None
+            # Si el stream está activo, tomar el último frame de RAM (sin HTTP)
+            if self.stream_activo and self.ultimo_frame_cv2 is not None:
+                img = self.ultimo_frame_cv2.copy()
+                w, h = img.shape[1], img.shape[0]
+                t_trans = 0.0
+                size_kb = 0.0
+                self.agregar_log_consola("[CÁMARA] ✓ Foto capturada desde frame en RAM (stream activo)")
+            else:
+                # Sin stream: petición HTTP a /capture
+                _, capture_url, _ = self._get_cam_urls()
+                self.agregar_log_consola(f"[CÁMARA] Solicitando fotograma a {capture_url}...")
+                t0 = time.time()
+                try:
+                    r = requests.get(capture_url, timeout=6)
+                    t_trans = (time.time() - t0) * 1000
+                    if r.status_code == 200:
+                        arr = np.frombuffer(r.content, np.uint8)
+                        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                        if img is not None:
+                            h, w, _ = img.shape
+                            size_kb = len(r.content) / 1024.0
+                            self.agregar_log_consola(
+                                f"[CÁMARA] ✓ Fotograma recibido: {w}x{h} px, {size_kb:.1f} KB, {t_trans:.0f} ms")
+                    else:
+                        self.agregar_log_consola(f"[CÁMARA] ✗ HTTP {r.status_code}")
+                except Exception as e:
+                    self.agregar_log_consola(f"[CÁMARA] ✗ Error: {e}")
 
-                    def _render():
-                        self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-                        self.lbl_metrics_cam.configure(text=f"Res: {w}x{h} px | Size: {size_kb:.1f} KB | Latencia: {t_trans:.0f} ms")
-                        self.lbl_status_cam.configure(text=f"Estado: 🟢 OK ({w}x{h} px, {t_trans:.0f} ms)", foreground=CLR_GREEN)
-                        self.lbl_ind_cam.configure(text="🟢 ESP32-CAM", foreground=CLR_GREEN)
-
-                    self.root.after(0, _render)
-                    self.agregar_log_consola(f"[CÁMARA] ✓ Fotograma recibido: {w}x{h} px, {size_kb:.1f} KB, Latencia={t_trans:.0f} ms")
-                else:
-                    self.lbl_status_cam.configure(text=f"Estado: 🔴 HTTP {r.status_code}", foreground=CLR_RED)
-            except Exception as e:
-                self.lbl_status_cam.configure(text="Estado: 🔴 DESCONECTADO", foreground=CLR_RED)
-                self.lbl_ind_cam.configure(text="🔴 ESP32-CAM", foreground=CLR_RED)
-                self.agregar_log_consola(f"[CÁMARA] ✗ Error HTTP: {e}")
+            if img is not None:
+                self.ultimo_frame_cv2 = img
+                h, w, _ = img.shape
+                img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                # Actualizar canvas pequeño del Dashboard
+                img_pil_small = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                self.cam_img_tk = ImageTk.PhotoImage(img_pil_small)
+                def _render_dash():
+                    self.canvas_cam.delete("all")
+                    self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                    self.lbl_metrics_cam.configure(
+                        text=f"Res: {w}x{h} px | FPS: FOTO")
+                    self.lbl_status_cam.configure(
+                        text=f"Estado: 🟢 Foto capturada ({w}x{h})", foreground=CLR_GREEN)
+                    self.lbl_ind_cam.configure(text="🟢 ESP32-CAM", foreground=CLR_GREEN)
+                self.root.after(0, _render_dash)
+                # Mostrar foto en panel HD o en popup si el HD no está abierto
+                self.root.after(0, lambda i=img: self._mostrar_foto_panel(i))
 
         threading.Thread(target=_run, daemon=True).start()
+
 
     def toggle_video_stream(self):
         """Activa o desactiva la transmisión MJPEG en tiempo real de la ESP32-CAM."""
@@ -398,35 +416,77 @@ class AsistenteApp:
         _, _, base = self._get_cam_urls()
         led_url = f"{base}/led?state={nuevo_estado}"
 
-        def _send_led():
-            try:
-                requests.get(led_url, timeout=2)
-            except Exception:
-                pass  # El LED puede no responder si no está en el firmware — no interrumpe nada
-        threading.Thread(target=_send_led, daemon=True).start()
+    def _get_cam_urls(self):
+        """Deriva stream_url y capture_url a partir de la IP base en el campo de texto."""
+        raw = self.entry_ip_cam.get().strip().rstrip("/")
+        base = raw.replace("/capture", "").replace("/stream", "").replace("/led", "")
+        return f"{base}/stream", f"{base}/capture", base
+
+    def toggle_flash_led(self):
+        """Conmuta el LED Flash. Si el stream está activo, lo reinicia limpiamente (<400ms)."""
+        self.flash_encendido = not self.flash_encendido
+        nuevo_estado = 1 if self.flash_encendido else 0
+        txt = "💡 Flash: ON" if self.flash_encendido else "💡 Flash: OFF"
+        try:
+            self.btn_flash.configure(text=txt)
+        except Exception:
+            pass
+        self.agregar_log_consola(
+            f"[FLASH LED] Luz LED {'ENCENDIDA (SÓLIDA)' if self.flash_encendido else 'APAGADA'}.")
+
+        _, _, base = self._get_cam_urls()
+        led_url = f"{base}/led?state={nuevo_estado}"
+
+        if self.stream_activo:
+            # Reinicio limpio: parar → LED → reiniciar (todo en hilo, <400ms)
+            def _restart_with_led():
+                self.stream_activo = False
+                time.sleep(0.15)
+                try:
+                    requests.get(led_url, timeout=1)
+                except Exception:
+                    pass
+                time.sleep(0.1)
+                self.stream_activo = True
+                try:
+                    self.btn_stream.configure(text="⏹️ Detener Video")
+                except Exception:
+                    pass
+                threading.Thread(target=self._bucle_video_stream, daemon=True).start()
+                if self.window_agrandar and self.window_agrandar.winfo_exists():
+                    threading.Thread(target=self._bucle_hd_canvas, daemon=True).start()
+            threading.Thread(target=_restart_with_led, daemon=True).start()
+        else:
+            def _send_led():
+                try:
+                    requests.get(led_url, timeout=2)
+                except Exception:
+                    pass
+            threading.Thread(target=_send_led, daemon=True).start()
 
 
     def abrir_visor_agrandado(self):
-        """Abre ventana emergente HD full con los 5 botones y MJPEG stream en tiempo real."""
+        """Ventana HD con stream + panel lateral de foto integrado (sin popups extra)."""
         if self.window_agrandar and self.window_agrandar.winfo_exists():
             self.window_agrandar.lift()
             return
 
         self.window_agrandar = tk.Toplevel(self.root)
-        self.window_agrandar.title("📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)")
-        self.window_agrandar.geometry("1024x720")
+        self.window_agrandar.title("📡 VISUALIZADOR DE CÁMARA HD")
+        self.window_agrandar.geometry("1200x720")
         self.window_agrandar.resizable(True, True)
         self.window_agrandar.configure(bg=BG_MAIN)
+        self.panel_foto_hd = None  # Panel lateral de foto, inicialmente oculto
 
         ttk.Label(
             self.window_agrandar,
             text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)",
             font=FONT_SUB, foreground=CLR_GREEN
-        ).pack(side=tk.TOP, pady=(8, 2))
+        ).pack(side=tk.TOP, pady=(6, 2))
 
-        # ── Barra de Control con 5 botones ────────────────────────────────────
+        # ── Barra de Control (5 botones) ───────────────────────────────────────────────
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
-        f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=10, pady=6)
+        f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=10, pady=4)
 
         ttk.Button(f_hd_ctrl, text="📸 Foto HD",
                    command=self._foto_hd).pack(side=tk.LEFT, padx=6)
@@ -439,96 +499,155 @@ class AsistenteApp:
         ttk.Button(f_hd_ctrl, text="❌ Cerrar",
                    command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
 
-        # ── Canvas HD principal ────────────────────────────────────────────────
-        self.canvas_agrandar = tk.Canvas(
-            self.window_agrandar,
-            bg="#000000", highlightthickness=2,
-            highlightbackground=CLR_GREEN
-        )
-        self.canvas_agrandar.pack(
-            side=tk.TOP, padx=10, pady=(0, 10),
-            expand=True, fill='both'
-        )
+        # ── Área principal (stream + panel foto lado a lado) ───────────────────────────────
+        self.frame_hd_principal = ttk.Frame(self.window_agrandar, style="TFrame")
+        self.frame_hd_principal.pack(side=tk.TOP, expand=True, fill='both', padx=10, pady=(0, 10))
 
-        # Si ya hay un fotograma en RAM, mostrarlo de inmediato
+        # Canvas de stream (ocupa todo el ancho por defecto)
+        self.canvas_agrandar = tk.Canvas(
+            self.frame_hd_principal, bg="#000000",
+            highlightthickness=2, highlightbackground=CLR_GREEN
+        )
+        self.canvas_agrandar.pack(side=tk.LEFT, expand=True, fill='both')
+
+        # Mostrar frame en RAM de inmediato si existe
         if self.ultimo_frame_cv2 is not None:
             self._renderizar_frame_hd(self.ultimo_frame_cv2)
         else:
             self.canvas_agrandar.create_text(
-                512, 340,
-                text="Presiona  'Video en Vivo'  o  'Foto HD'  para iniciar transmisión",
+                400, 300,
+                text="Presiona 'Video en Vivo' o 'Foto HD' para iniciar",
                 fill=TEXT_MUTED, font=FONT_BODY
             )
 
-        # Si el stream ya está activo, lanzar bucle HD
+        # Lanzar bucle HD si el stream ya está corriendo
         if self.stream_activo:
             threading.Thread(target=self._bucle_hd_canvas, daemon=True).start()
 
+
     # ── Helpers del Visor HD ─────────────────────────────────────────────────
 
+    def _mostrar_foto_panel(self, img_bgr):
+        """
+        Muestra la foto capturada:
+        - En el panel lateral de la ventana HD (si está abierta) → SIN nueva ventana
+        - En un Toplevel pequeño (si solo está en el Dashboard)
+        """
+        h, w, _ = img_bgr.shape
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+
+        if self.window_agrandar and self.window_agrandar.winfo_exists():
+            # ─ Panel lateral integrado dentro de la ventana HD ──────────────────────
+            if self.panel_foto_hd is None or not self.panel_foto_hd.winfo_exists():
+                # Crear panel lateral si no existe
+                self.panel_foto_hd = ttk.Frame(
+                    self.frame_hd_principal, style="Card.TFrame", width=340)
+                self.panel_foto_hd.pack(side=tk.RIGHT, fill='y', padx=(6, 0))
+                self.panel_foto_hd.pack_propagate(False)
+
+                ttk.Label(
+                    self.panel_foto_hd,
+                    text="📸 Última Foto Capturada",
+                    font=FONT_CARD, foreground=CLR_AMBER
+                ).pack(pady=(8, 4))
+
+                self._lbl_foto_panel = tk.Label(
+                    self.panel_foto_hd, bg="#000000", cursor="hand2")
+                self._lbl_foto_panel.pack(padx=8, pady=4)
+
+                self._lbl_info_foto = ttk.Label(
+                    self.panel_foto_hd, text="", font=("Consolas", 8),
+                    foreground=CLR_CYAN)
+                self._lbl_info_foto.pack(pady=(0, 4))
+
+                f_foto_btns = ttk.Frame(self.panel_foto_hd, style="Card.TFrame")
+                f_foto_btns.pack(fill='x', padx=8, pady=4)
+
+                ttk.Button(
+                    f_foto_btns, text="💾 Guardar PNG",
+                    command=lambda: self._guardar_foto_png(self.ultimo_frame_cv2)
+                ).pack(fill='x', pady=2)
+                ttk.Button(
+                    f_foto_btns, text="📷 Escanear Cripto",
+                    command=self.escanear_cripto_pipeline
+                ).pack(fill='x', pady=2)
+                ttk.Button(
+                    f_foto_btns, text="✖ Cerrar Panel Foto",
+                    command=self._cerrar_panel_foto
+                ).pack(fill='x', pady=2)
+
+            # Actualizar imagen en el panel (escalar a 320x220)
+            img_thumb = Image.fromarray(img_rgb)
+            img_thumb.thumbnail((320, 220), Image.Resampling.LANCZOS)
+            self._foto_panel_tk = ImageTk.PhotoImage(img_thumb)
+            self._lbl_foto_panel.configure(image=self._foto_panel_tk)
+            self._lbl_info_foto.configure(text=f"{w}x{h} px")
+
+        else:
+            # ─ Popup pequeño solo si la ventana HD NO está abierta (Dashboard) ──
+            img_popup = Image.fromarray(img_rgb)
+            img_popup.thumbnail((480, 360), Image.Resampling.LANCZOS)
+            popup = tk.Toplevel(self.root)
+            popup.title(f"📸 Foto Capturada — {w}x{h} px")
+            popup.configure(bg=BG_MAIN)
+            popup.resizable(False, False)
+            tk_img = ImageTk.PhotoImage(img_popup)
+            lbl = tk.Label(popup, image=tk_img, bg="#000000")
+            lbl.image = tk_img
+            lbl.pack(padx=6, pady=6)
+            ttk.Label(popup, text=f"{w}x{h} px",
+                      font=("Consolas", 9), foreground=CLR_CYAN).pack(pady=(0, 2))
+            f_b = ttk.Frame(popup, style="Card.TFrame")
+            f_b.pack(fill='x', padx=6, pady=4)
+            ttk.Button(f_b, text="💾 Guardar PNG",
+                       command=lambda: self._guardar_foto_png(img_bgr)).pack(side=tk.LEFT, padx=4)
+            ttk.Button(f_b, text="📷 Escanear Cripto",
+                       command=lambda: [popup.destroy(),
+                                        self.escanear_cripto_pipeline()]).pack(side=tk.LEFT, padx=4)
+            ttk.Button(f_b, text="❌ Cerrar",
+                       command=popup.destroy).pack(side=tk.RIGHT, padx=4)
+
+    def _cerrar_panel_foto(self):
+        """Cierra el panel lateral de foto dentro de la ventana HD."""
+        if self.panel_foto_hd and self.panel_foto_hd.winfo_exists():
+            self.panel_foto_hd.destroy()
+            self.panel_foto_hd = None
+
     def _foto_hd(self):
-        """Captura foto HD. Muestra la imagen en ventana emergente pequeña sin interrumpir el stream."""
+        """Captura foto. Si stream activo → usa frame en RAM (sin HTTP). Muestra en panel HD."""
         def _run():
-            _, capture_url, _ = self._get_cam_urls()
-            self.agregar_log_consola(f"[CÁMARA HD] Capturando foto desde {capture_url}...")
-            t0 = time.time()
-            try:
-                r = requests.get(capture_url, timeout=6)
-                t_trans = (time.time() - t0) * 1000
-                if r.status_code == 200:
-                    arr = np.frombuffer(r.content, np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if img is not None:
-                        h, w, _ = img.shape
-                        # Guardar como último frame disponible para IA
-                        self.ultimo_frame_cv2 = img
-                        self.agregar_log_consola(
-                            f"[CÁMARA HD] ✓ Foto capturada: {w}x{h} px, "
-                            f"{len(r.content)/1024:.1f} KB, {t_trans:.0f} ms")
+            img = None
+            if self.stream_activo and self.ultimo_frame_cv2 is not None:
+                # ✅ Clave Opción 1+2: frame ya en RAM, cero peticiones HTTP
+                img = self.ultimo_frame_cv2.copy()
+                self.agregar_log_consola(
+                    "[CÁMARA HD] ✓ Foto tomada del frame en RAM (sin interrumpir stream)")
+            else:
+                _, capture_url, _ = self._get_cam_urls()
+                self.agregar_log_consola(f"[CÁMARA HD] Capturando foto desde {capture_url}...")
+                t0 = time.time()
+                try:
+                    r = requests.get(capture_url, timeout=6)
+                    t_trans = (time.time() - t0) * 1000
+                    if r.status_code == 200:
+                        arr = np.frombuffer(r.content, np.uint8)
+                        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                        if img is not None:
+                            h, w, _ = img.shape
+                            self.agregar_log_consola(
+                                f"[CÁMARA HD] ✓ Foto capturada: {w}x{h} px, "
+                                f"{len(r.content)/1024:.1f} KB, {t_trans:.0f} ms")
+                    else:
+                        self.agregar_log_consola(f"[CÁMARA HD] ✗ HTTP {r.status_code}")
+                except Exception as e:
+                    self.agregar_log_consola(f"[CÁMARA HD] ✗ Error: {e}")
 
-                        # Mostrar en ventana emergente pequeña (no interrumpe el stream)
-                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        img_popup = Image.fromarray(img_rgb)
-                        # Escalar a 640x480 manteniendo aspecto
-                        img_popup.thumbnail((640, 480), Image.Resampling.LANCZOS)
+            if img is not None:
+                self.ultimo_frame_cv2 = img
+                self.root.after(0, lambda i=img: self._mostrar_foto_panel(i))
 
-                        def _mostrar_popup(i=img_popup, W=w, H=h, sz=len(r.content)/1024, ms=t_trans):
-                            popup = tk.Toplevel(self.root)
-                            popup.title(f"📸 Foto Capturada — {W}x{H} px")
-                            popup.configure(bg=BG_MAIN)
-                            popup.resizable(False, False)
-
-                            tk_img = ImageTk.PhotoImage(i)
-                            lbl_img = tk.Label(popup, image=tk_img, bg="#000000")
-                            lbl_img.image = tk_img  # Mantener referencia para evitar GC
-                            lbl_img.pack(padx=8, pady=8)
-
-                            info = f"Resolución: {W}x{H} px  |  Tamaño: {sz:.1f} KB  |  Latencia: {ms:.0f} ms"
-                            ttk.Label(popup, text=info, font=("Consolas", 9),
-                                      foreground=CLR_CYAN).pack(pady=(0, 4))
-
-                            f_btns = ttk.Frame(popup, style="Card.TFrame")
-                            f_btns.pack(fill='x', padx=8, pady=6)
-                            ttk.Button(
-                                f_btns, text="💾 Guardar PNG",
-                                command=lambda: self._guardar_foto_png(img)
-                            ).pack(side=tk.LEFT, padx=6)
-                            ttk.Button(
-                                f_btns, text="📷 Escanear Cripto",
-                                command=lambda: [popup.destroy(), self.escanear_cripto_pipeline()]
-                            ).pack(side=tk.LEFT, padx=6)
-                            ttk.Button(
-                                f_btns, text="❌ Cerrar",
-                                command=popup.destroy
-                            ).pack(side=tk.RIGHT, padx=6)
-
-                        self.root.after(0, _mostrar_popup)
-                else:
-                    self.agregar_log_consola(
-                        f"[CÁMARA HD] ✗ HTTP {r.status_code}")
-            except Exception as e:
-                self.agregar_log_consola(f"[CÁMARA HD] ✗ Error: {e}")
         threading.Thread(target=_run, daemon=True).start()
+
 
     def _guardar_foto_png(self, img_bgr):
         """Guarda la foto capturada como PNG en la carpeta fotos_capturadas."""
