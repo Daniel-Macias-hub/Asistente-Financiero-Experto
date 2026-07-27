@@ -568,13 +568,10 @@ class AsistenteApp:
                     command=lambda: self._guardar_foto_png(self.ultimo_frame_cv2)
                 ).pack(fill='x', pady=2)
                 ttk.Button(
-                    f_foto_btns, text="📷 Escanear Cripto",
-                    command=self.escanear_cripto_pipeline
-                ).pack(fill='x', pady=2)
-                ttk.Button(
                     f_foto_btns, text="✖ Cerrar Panel Foto",
                     command=self._cerrar_panel_foto
                 ).pack(fill='x', pady=2)
+
 
             # Actualizar imagen en el panel (escalar a 320x220)
             img_thumb = Image.fromarray(img_rgb)

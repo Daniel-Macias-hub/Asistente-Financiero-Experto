@@ -90,7 +90,7 @@ class DetectorGeminiVision:
             for model_name in modelos_gemini:
                 endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
                 url = f"{endpoint}?key={self.api_key}"
-                headers = {"Content-Type": "application/json", "X-goog-api-key": self.api_key}
+                headers = {"Content-Type": "application/json"}
                 try:
                     resp = _requests.post(url, json=payload, headers=headers, timeout=10)
                     if resp.status_code == 200:
@@ -104,9 +104,14 @@ class DetectorGeminiVision:
                             confianza = float(r.get("confianza", 0.0))
                             if cripto and str(cripto).lower() != "null" and confianza > 0.3:
                                 return str(cripto).lower().strip(), confianza
+                    elif resp.status_code == 429:
+                        # Cuota por minuto alcanzada, esperar brevemente e intentar siguiente modelo
+                        time.sleep(1.0)
+                        continue
                 except Exception:
                     continue
             return None, 0.0
+
 
 
 

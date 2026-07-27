@@ -1,5 +1,6 @@
 import re
 import threading
+import pyttsx3
 
 def limpiar_texto_para_tts(texto: str) -> str:
     """
@@ -39,8 +40,7 @@ def detener_habla():
 
 def hablar(texto: str):
     """
-    Sintetiza el texto usando pyttsx3 en un hilo dedicado de forma segura
-    sin bloquear la interfaz ni otras consultas.
+    Sintetiza el texto usando la voz en español de México (Microsoft Sabina) de forma fluida.
     """
     texto_limpio = limpiar_texto_para_tts(texto)
     if not texto_limpio:
@@ -56,14 +56,24 @@ def hablar(texto: str):
                 pass
 
             try:
-                import pyttsx3
                 engine = pyttsx3.init()
                 voces = engine.getProperty('voices')
+                
+                # Buscar específicamente la voz en español Sabina (México) o cualquier voz en español
+                voz_seleccionada = None
                 for voz in voces:
-                    if any(k in voz.name.lower() for k in ["spanish", "es", "sabina", "helena", "raul", "pablo"]):
-                        engine.setProperty('voice', voz.id)
+                    nombre_lower = voz.name.lower()
+                    id_lower = voz.id.lower()
+                    if "sabina" in nombre_lower or "es-mx" in id_lower or "spanish (mexico)" in nombre_lower:
+                        voz_seleccionada = voz.id
                         break
-                engine.setProperty('rate', 165)
+                    elif "spanish" in nombre_lower or "es-" in id_lower or "es_" in id_lower:
+                        voz_seleccionada = voz.id
+
+                if voz_seleccionada:
+                    engine.setProperty('voice', voz_seleccionada)
+                
+                engine.setProperty('rate', 155)  # Velocidad fluida y natural
                 engine.setProperty('volume', 1.0)
                 engine.say(texto_limpio)
                 engine.runAndWait()
