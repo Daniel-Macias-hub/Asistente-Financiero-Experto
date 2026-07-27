@@ -177,10 +177,12 @@ class AsistenteApp:
 
         f_ip = ttk.Frame(c_cam, style="Card.TFrame")
         f_ip.pack(fill='x', padx=12, pady=2)
-        ttk.Label(f_ip, text="IP URL: ", font=FONT_BODY).pack(side=tk.LEFT)
-        self.entry_ip_cam = ttk.Entry(f_ip, width=24)
-        self.entry_ip_cam.insert(0, "http://192.168.3.135/capture")
+        ttk.Label(f_ip, text="IP Cámara: ", font=FONT_BODY).pack(side=tk.LEFT)
+        self.entry_ip_cam = ttk.Entry(f_ip, width=22)
+        self.entry_ip_cam.insert(0, "http://192.168.3.135")
         self.entry_ip_cam.pack(side=tk.LEFT, padx=5)
+        ttk.Label(f_ip, text="(sólo IP base, sin /capture ni /stream)",
+                  font=("Segoe UI", 9), foreground=TEXT_MUTED).pack(side=tk.LEFT, padx=2)
 
         self.lbl_status_cam = ttk.Label(c_cam, text="Estado: 🔴 DESCONOCIDO", font=("Segoe UI", 10, "bold"), foreground=TEXT_MUTED)
         self.lbl_status_cam.pack(anchor='w', padx=12, pady=2)
@@ -374,30 +376,35 @@ class AsistenteApp:
             if self.window_agrandar and self.window_agrandar.winfo_exists():
                 threading.Thread(target=self._bucle_hd_canvas, daemon=True).start()
 
+    def _get_cam_urls(self):
+        """Deriva stream_url y capture_url a partir de la IP base en el campo de texto."""
+        raw = self.entry_ip_cam.get().strip().rstrip("/")
+        # Eliminar cualquier endpoint que ya venga en la URL
+        base = raw.replace("/capture", "").replace("/stream", "").replace("/led", "")
+        return f"{base}/stream", f"{base}/capture", base
+
     def toggle_flash_led(self):
-        """Conmuta el LED Flash sin bloquear el streaming continuo."""
-        base_url = self.entry_ip_cam.get().strip()
-        host_url = base_url.split("/capture")[0].split("/stream")[0]
-        
+        """Conmuta el LED Flash enviando solo un HTTP GET /led — NO interrumpe el stream."""
         self.flash_encendido = not self.flash_encendido
         nuevo_estado = 1 if self.flash_encendido else 0
         txt = "💡 Flash: ON" if self.flash_encendido else "💡 Flash: OFF"
-        self.btn_flash.configure(text=txt)
-        self.agregar_log_consola(f"[FLASH LED] Luz LED {'ENCENDIDA (SÓLIDA)' if self.flash_encendido else 'APAGADA'}.")
+        try:
+            self.btn_flash.configure(text=txt)
+        except Exception:
+            pass
+        self.agregar_log_consola(
+            f"[FLASH LED] Luz LED {'ENCENDIDA (SÓLIDA)' if self.flash_encendido else 'APAGADA'}.")
 
-        if self.stream_activo:
-            self.stream_activo = False
-            time.sleep(0.15)
-            self.stream_activo = True
-            threading.Thread(target=self._bucle_video_stream, daemon=True).start()
-        else:
-            led_url = f"{host_url}/led?state={nuevo_estado}"
-            def _run():
-                try:
-                    requests.get(led_url, timeout=2)
-                except Exception:
-                    pass
-            threading.Thread(target=_run, daemon=True).start()
+        _, _, base = self._get_cam_urls()
+        led_url = f"{base}/led?state={nuevo_estado}"
+
+        def _send_led():
+            try:
+                requests.get(led_url, timeout=2)
+            except Exception:
+                pass  # El LED puede no responder si no está en el firmware — no interrumpe nada
+        threading.Thread(target=_send_led, daemon=True).start()
+
 
     def abrir_visor_agrandado(self):
         """Abre ventana emergente HD full con los 5 botones y MJPEG stream en tiempo real."""
@@ -460,39 +467,79 @@ class AsistenteApp:
     # ── Helpers del Visor HD ─────────────────────────────────────────────────
 
     def _foto_hd(self):
-        """Captura foto HD y la muestra en canvas_agrandar si está abierto."""
+        """Captura foto HD. Muestra la imagen en ventana emergente pequeña sin interrumpir el stream."""
         def _run():
-            url = self.entry_ip_cam.get().strip()
-            capture_url = url.replace("/stream", "/capture")
+            _, capture_url, _ = self._get_cam_urls()
             self.agregar_log_consola(f"[CÁMARA HD] Capturando foto desde {capture_url}...")
             t0 = time.time()
             try:
-                r = requests.get(capture_url, timeout=5)
+                r = requests.get(capture_url, timeout=6)
                 t_trans = (time.time() - t0) * 1000
                 if r.status_code == 200:
                     arr = np.frombuffer(r.content, np.uint8)
                     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     if img is not None:
                         h, w, _ = img.shape
+                        # Guardar como último frame disponible para IA
                         self.ultimo_frame_cv2 = img
-                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
-                        self.cam_img_tk = ImageTk.PhotoImage(img_pil)
-                        def _render_main():
-                            self.canvas_cam.delete("all")
-                            self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-                            self.lbl_metrics_cam.configure(
-                                text=f"Res: {w}x{h} px | Size: {len(r.content)/1024:.1f} KB | Latencia: {t_trans:.0f} ms")
-                            self.lbl_status_cam.configure(
-                                text=f"Estado: 🟢 OK ({w}x{h} px, {t_trans:.0f} ms)", foreground=CLR_GREEN)
-                            self.lbl_ind_cam.configure(text="🟢 ESP32-CAM", foreground=CLR_GREEN)
-                        self.root.after(0, _render_main)
-                        self.root.after(0, lambda: self._renderizar_frame_hd(img))
                         self.agregar_log_consola(
-                            f"[CÁMARA HD] ✓ {w}x{h} px, {len(r.content)/1024:.1f} KB, {t_trans:.0f} ms")
+                            f"[CÁMARA HD] ✓ Foto capturada: {w}x{h} px, "
+                            f"{len(r.content)/1024:.1f} KB, {t_trans:.0f} ms")
+
+                        # Mostrar en ventana emergente pequeña (no interrumpe el stream)
+                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        img_popup = Image.fromarray(img_rgb)
+                        # Escalar a 640x480 manteniendo aspecto
+                        img_popup.thumbnail((640, 480), Image.Resampling.LANCZOS)
+
+                        def _mostrar_popup(i=img_popup, W=w, H=h, sz=len(r.content)/1024, ms=t_trans):
+                            popup = tk.Toplevel(self.root)
+                            popup.title(f"📸 Foto Capturada — {W}x{H} px")
+                            popup.configure(bg=BG_MAIN)
+                            popup.resizable(False, False)
+
+                            tk_img = ImageTk.PhotoImage(i)
+                            lbl_img = tk.Label(popup, image=tk_img, bg="#000000")
+                            lbl_img.image = tk_img  # Mantener referencia para evitar GC
+                            lbl_img.pack(padx=8, pady=8)
+
+                            info = f"Resolución: {W}x{H} px  |  Tamaño: {sz:.1f} KB  |  Latencia: {ms:.0f} ms"
+                            ttk.Label(popup, text=info, font=("Consolas", 9),
+                                      foreground=CLR_CYAN).pack(pady=(0, 4))
+
+                            f_btns = ttk.Frame(popup, style="Card.TFrame")
+                            f_btns.pack(fill='x', padx=8, pady=6)
+                            ttk.Button(
+                                f_btns, text="💾 Guardar PNG",
+                                command=lambda: self._guardar_foto_png(img)
+                            ).pack(side=tk.LEFT, padx=6)
+                            ttk.Button(
+                                f_btns, text="📷 Escanear Cripto",
+                                command=lambda: [popup.destroy(), self.escanear_cripto_pipeline()]
+                            ).pack(side=tk.LEFT, padx=6)
+                            ttk.Button(
+                                f_btns, text="❌ Cerrar",
+                                command=popup.destroy
+                            ).pack(side=tk.RIGHT, padx=6)
+
+                        self.root.after(0, _mostrar_popup)
+                else:
+                    self.agregar_log_consola(
+                        f"[CÁMARA HD] ✗ HTTP {r.status_code}")
             except Exception as e:
                 self.agregar_log_consola(f"[CÁMARA HD] ✗ Error: {e}")
         threading.Thread(target=_run, daemon=True).start()
+
+    def _guardar_foto_png(self, img_bgr):
+        """Guarda la foto capturada como PNG en la carpeta fotos_capturadas."""
+        import os
+        carpeta = os.path.join(os.path.dirname(__file__), "..", "fotos_capturadas")
+        os.makedirs(carpeta, exist_ok=True)
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        ruta = os.path.join(carpeta, f"foto_{ts}.png")
+        cv2.imwrite(ruta, img_bgr)
+        self.agregar_log_consola(f"[FOTO] ✓ Guardada en: {ruta}")
+
 
     def _renderizar_frame_hd(self, frame_bgr):
         """Renderiza frame OpenCV en el canvas_agrandar (hilo GUI)."""
@@ -520,20 +567,16 @@ class AsistenteApp:
             time.sleep(0.04)  # ~25 FPS en la ventana HD
 
     def _bucle_video_stream(self):
-        base_url = self.entry_ip_cam.get().strip()
-        flash_param = "1" if self.flash_encendido else "0"
-        
-        capture_url = base_url.replace("/stream", "/capture")
-        stream_url = f"{base_url.replace('/capture', '/stream')}?flash={flash_param}"
-        
+        stream_url, capture_url, _ = self._get_cam_urls()
         session = requests.Session()
         frames_count = 0
         t_start_fps = time.time()
 
-        # Stream MJPEG continuo ultra-rápido (>25 FPS)
+        # ── Modo 1: MJPEG Stream Continuo ────────────────────────────────────────
         try:
-            r_stream = session.get(stream_url, stream=True, timeout=3)
+            r_stream = session.get(stream_url, stream=True, timeout=5)
             if r_stream.status_code == 200:
+                self.agregar_log_consola(f"[CÁMARA] ✓ Conectado al stream MJPEG: {stream_url}")
                 bytes_buf = b""
                 for chunk in r_stream.iter_content(chunk_size=4096):
                     if not self.stream_activo:
