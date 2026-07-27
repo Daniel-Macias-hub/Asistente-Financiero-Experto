@@ -38,9 +38,9 @@ class ComunicacionESP32:
                 self.serial_conn.reset_input_buffer()
                 self.serial_conn.reset_output_buffer()
 
-                # Reintentar PING hasta 3 veces para estabilizar la línea USB CDC
+                # Reintentar PING y enviar Ctrl+C / Ctrl+D para autorrecuperar MicroPython si cayó a REPL
                 confirmado = False
-                for intengo in range(3):
+                for intento in range(3):
                     if self.callback_log:
                         self.callback_log("TX ➔ PING")
                     self.serial_conn.write(b"\r\nPING\r\n")
@@ -60,6 +60,13 @@ class ComunicacionESP32:
                         if self.callback_log:
                             self.callback_log("RX ◄ PONG")
                         break
+                    else:
+                        # Si MicroPython está atascado en REPL, enviar Ctrl+C (0x03) y Ctrl+D (0x04) para reiniciar main.py
+                        if self.callback_log:
+                            self.callback_log("[COM RECOVERY] Enviando reset a MicroPython (Ctrl+D)...")
+                        self.serial_conn.write(b"\x03\x04\r\nimport main\r\n")
+                        self.serial_conn.flush()
+                        time.sleep(0.6)
 
                 if confirmado:
                     self.conectado = True

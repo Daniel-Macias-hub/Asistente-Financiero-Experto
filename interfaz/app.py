@@ -528,41 +528,47 @@ class AsistenteApp:
                 detector.cargar_modelo()
                 cripto, conf = detector.detectar(frame)
                 
-                activo = cripto if cripto else "bitcoin"
-                conf_pct = conf * 100.0 if conf > 0 else 88.0
-                
-                self.agregar_log_consola(f"[PIPELINE IA] Activo reconocido: '{activo.upper()}' (Confianza: {conf_pct:.1f}%)")
-                
-                # Anotar recuadro verde y etiqueta en la vista previa de la cámara
-                img_annotated = frame.copy()
-                h, w, _ = img_annotated.shape
-                cv2.rectangle(img_annotated, (15, 15), (w-15, h-15), (0, 210, 135), 3)
-                cv2.putText(img_annotated, f"{activo.upper()} ({conf_pct:.0f}%)", (25, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 210, 135), 2)
-                
-                img_rgb = cv2.cvtColor(img_annotated, cv2.COLOR_BGR2RGB)
-                img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
-                self.cam_img_tk = ImageTk.PhotoImage(img_pil)
-                self.root.after(0, lambda: self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
+                if cripto:
+                    activo = cripto.upper()
+                    conf_pct = conf * 100.0
+                    self.agregar_log_consola(f"[PIPELINE IA] Activo reconocido: '{activo}' (Confianza: {conf_pct:.1f}%)")
+                    
+                    # Anotar recuadro verde y etiqueta en la vista previa de la cámara
+                    img_annotated = frame.copy()
+                    h, w, _ = img_annotated.shape
+                    cv2.rectangle(img_annotated, (15, 15), (w-15, h-15), (0, 210, 135), 3)
+                    cv2.putText(img_annotated, f"{activo} ({conf_pct:.0f}%)", (25, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 210, 135), 2)
+                    
+                    img_rgb = cv2.cvtColor(img_annotated, cv2.COLOR_BGR2RGB)
+                    img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                    self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+                    self.root.after(0, lambda: self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
 
-                resp, _ = generar_respuesta_precio(activo)
-                self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
+                    resp, _ = generar_respuesta_precio(activo)
+                    self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
 
-                esp32_comm.enviar_comando_oled("RESPONDIENDO")
-                
-                # Cambiar automáticamente a la pestaña "📈 Mercado en Tiempo Real" y cargar los datos del activo detectado
-                def _update_ui_and_tab():
-                    self.notebook.select(self.tab_mercado)
-                    self.entry_ticker.delete(0, tk.END)
-                    self.entry_ticker.insert(0, activo.upper())
-                    self.txt_mercado.configure(state='normal')
-                    self.txt_mercado.delete("1.0", tk.END)
-                    self.txt_mercado.insert(tk.END, f"📊 ANÁLISIS DE MERCADO EN TIEMPO REAL - {activo.upper()}\n\n{resp}")
-                    self.txt_mercado.configure(state='disabled')
-                    self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo.upper()}**.\nDesplegando gráficas y datos de mercado en tiempo real...\n\n{resp}", "bot")
+                    esp32_comm.enviar_comando_oled("RESPONDIENDO")
+                    
+                    # Cambiar automáticamente a la pestaña "📈 Mercado en Tiempo Real" y desplegar datos
+                    def _update_ui_and_tab():
+                        self.notebook.select(self.tab_mercado)
+                        self.entry_ticker.delete(0, tk.END)
+                        self.entry_ticker.insert(0, activo)
+                        self.txt_mercado.configure(state='normal')
+                        self.txt_mercado.delete("1.0", tk.END)
+                        self.txt_mercado.insert(tk.END, f"{resp}\n\n💡 Usa el botón '🎙️ Hablar sobre este Activo' para consultar por voz el año de origen o precios históricos.")
+                        self.txt_mercado.configure(state='disabled')
+                        self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo}**.\nDesplegando análisis completo en pesos MXN y datos históricos en la pestaña de Mercado...\n\n{resp}", "bot")
 
-                self.root.after(0, _update_ui_and_tab)
-                hablar(f"Criptomoneda identificada: {activo}. {resp.splitlines()[0] if resp else ''}")
-                esp32_comm.enviar_comando_oled("IDLE")
+                    self.root.after(0, _update_ui_and_tab)
+                    hablar(f"Criptomoneda identificada: {activo}. {resp.splitlines()[0] if resp else ''}")
+                    esp32_comm.enviar_comando_oled("IDLE")
+                else:
+                    esp32_comm.enviar_comando_oled("ERROR")
+                    msg_unrec = "No se reconoció un logotipo con suficiente certeza. Por favor enfoca bien el logotipo de Bitcoin, Dogecoin, Ethereum, Solana, Cardano, XRP o BNB ante la cámara."
+                    self.agregar_log_consola(f"[PIPELINE IA] ⚠️ {msg_unrec}")
+                    self.agregar_mensaje("Asistente Experto", f"⚠️ {msg_unrec}", "bot")
+                    hablar("No se reconoció la criptomoneda. Enfoca el logotipo centrado ante la cámara.")
             else:
                 esp32_comm.enviar_comando_oled("ERROR")
                 self.agregar_log_consola("[PIPELINE ERROR] No se pudo obtener fotograma de la cámara ESP32-CAM.")
@@ -811,7 +817,8 @@ class AsistenteApp:
         self.entry_ticker = tk.Entry(f_in, font=FONT_BODY, bg=BG_ENTRY, fg=TEXT_MAIN, width=15)
         self.entry_ticker.pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(f_in, text="📊 Consultar Mercado", command=self.consultar_mercado).pack(side=tk.LEFT, padx=10)
+        ttk.Button(f_in, text="📊 Consultar Mercado", command=self.consultar_mercado).pack(side=tk.LEFT, padx=5)
+        ttk.Button(f_in, text="🎙️ Hablar sobre este Activo (INMP441)", command=self.consultar_voz_mercado).pack(side=tk.LEFT, padx=5)
 
         self.txt_mercado = scrolledtext.ScrolledText(container, state='disabled', wrap=tk.WORD, font=("Segoe UI", 12), bg=BG_ENTRY, fg=TEXT_MAIN, height=12)
         self.txt_mercado.pack(expand=True, fill='both', pady=10)
@@ -827,6 +834,45 @@ class AsistenteApp:
                 self.txt_mercado.insert(tk.END, resp)
                 self.txt_mercado.configure(state='disabled')
             self.root.after(0, _update)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def consultar_voz_mercado(self):
+        ticker_actual = self.entry_ticker.get().strip() or "BTC"
+        def _run():
+            def _prep():
+                self.txt_mercado.configure(state='normal')
+                self.txt_mercado.delete("1.0", tk.END)
+                self.txt_mercado.insert(tk.END, f"🎙️ [🔴 ESCUCHANDO — Pregunta algo sobre {ticker_actual.upper()} por el micrófono INMP441 por 4 segundos...]\n")
+                self.txt_mercado.configure(state='disabled')
+            self.root.after(0, _prep)
+            
+            esp32_comm.enviar_comando_oled("ESCUCHANDO")
+            metrics, res = esp32_comm.capturar_audio_mic(4)
+            esp32_comm.enviar_comando_oled("PROCESANDO")
+            
+            if metrics and "pcm_bytes" in metrics:
+                pregunta = escuchar_desde_pcm(metrics["pcm_bytes"])
+                consulta_combinada = f"{pregunta} {ticker_actual}"
+                resp, _ = procesar_consulta(consulta_combinada)
+                
+                def _update():
+                    self.txt_mercado.configure(state='normal')
+                    self.txt_mercado.delete("1.0", tk.END)
+                    self.txt_mercado.insert(tk.END, f"🎙️ Pregunta por Voz: \"{pregunta}\"\n\n🤖 RESPUESTA DEL ASISTENTE EXPERTO:\n{resp}\n")
+                    self.txt_mercado.configure(state='disabled')
+                    
+                self.root.after(0, _update)
+                esp32_comm.enviar_comando_oled("RESPONDIENDO")
+                hablar(resp)
+                esp32_comm.enviar_comando_oled("IDLE")
+            else:
+                def _err():
+                    self.txt_mercado.configure(state='normal')
+                    self.txt_mercado.insert(tk.END, "\n❌ No se recibió audio del micrófono INMP441.")
+                    self.txt_mercado.configure(state='disabled')
+                self.root.after(0, _err)
+                esp32_comm.enviar_comando_oled("ERROR")
+
         threading.Thread(target=_run, daemon=True).start()
 
     # --------------------------------------------------------------------------
