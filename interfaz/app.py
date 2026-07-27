@@ -246,14 +246,23 @@ class AsistenteApp:
 
     def conectar_esp32_dinamico(self):
         puerto_sel = self.combo_puertos.get()
-        if "COM4" in puerto_sel and "COM5" in self.combo_puertos['values']:
-            self.agregar_log_consola("[CONEXIÓN AVISO] Se detectó COM4 (ESP32-CAM). Seleccionando automáticamente COM5 para el ESP32-S3...")
-            puerto_sel = "COM5"
-            self.combo_puertos.set("COM5")
 
         def _run():
             self.agregar_log_consola(f"[CONEXIÓN] Intentando conectar a {puerto_sel} (ESP32-S3)...")
             exito, puerto_ok = esp32_comm.conectar(puerto_sel)
+            
+            # Si el puerto seleccionado falló, probar automáticamente todos los demás puertos disponibles
+            if not exito:
+                puertos_disp = esp32_comm.obtener_puertos_disponibles()
+                for p_alt in puertos_disp:
+                    if p_alt != puerto_sel:
+                        self.agregar_log_consola(f"[AUTO-BUSQUEDA] Probando puerto alternativo {p_alt}...")
+                        exito_alt, puerto_ok_alt = esp32_comm.conectar(p_alt)
+                        if exito_alt:
+                            exito = True
+                            puerto_ok = puerto_ok_alt
+                            break
+
             if exito and puerto_ok:
                 def _gui_ok():
                     self.combo_puertos.set(puerto_ok)
@@ -267,7 +276,7 @@ class AsistenteApp:
                     self.lbl_status_esp32.configure(text="Estado: 🔴 DESCONECTADO", foreground=CLR_RED)
                     self.lbl_ind_esp.configure(text="🔴 ESP32-S3", foreground=CLR_RED)
                 self.root.after(0, _gui_fail)
-                self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por Thonny IDE, haz clic en el botón 'Detener (Stop)' en Thonny para liberarlo.")
+                self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por otro programa o Thonny, desconecta y vuelve a conectar el cable USB del ESP32-S3.")
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -391,19 +400,21 @@ class AsistenteApp:
         self.window_agrandar.geometry("850x640")
         self.window_agrandar.configure(bg=BG_MAIN)
 
-        ttk.Label(self.window_agrandar, text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)", font=FONT_SUB, foreground=CLR_GREEN).pack(pady=8)
-        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=480, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
-        self.canvas_agrandar.pack(padx=10, pady=5)
-        self.canvas_agrandar.create_text(400, 240, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
+        ttk.Label(self.window_agrandar, text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)", font=FONT_SUB, foreground=CLR_GREEN).pack(side=tk.TOP, pady=6)
 
-        # Barra de Control Integrada en la Ventana HD
+        # Barra de Control Integrada en la Ventana HD (Ubicada en la parte superior)
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
-        f_hd_ctrl.pack(fill='x', padx=15, pady=10)
+        f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=15, pady=6)
 
         ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.capturar_foto).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="⚡ Encender/Apagar Flash", command=self.alternar_flash).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="❌ Cerrar Ventana", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
+
+        # Canvas de Video HD
+        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=480, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
+        self.canvas_agrandar.pack(side=tk.TOP, padx=10, pady=5, expand=True)
+        self.canvas_agrandar.create_text(400, 240, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
 
     def _bucle_video_stream(self):
         base_url = self.entry_ip_cam.get().strip()
