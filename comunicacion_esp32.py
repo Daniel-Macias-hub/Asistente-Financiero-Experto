@@ -172,7 +172,40 @@ class ComunicacionESP32:
             except Exception as e:
                 return False, str(e)
 
-    def capturar_audio_mic(self, duracion_sec=2):
+    def reproducir_audio_bocina_pcm(self, pcm_bytes: bytes):
+        """Transmite bytes PCM al ESP32-S3 para reproducirlos en la bocina física MAX98357A."""
+        if not self.conectado or not self.serial_conn or not pcm_bytes:
+            return False, "ESP32 no conectado o sin audio"
+
+        with self.lock:
+            try:
+                self.serial_conn.reset_input_buffer()
+                cmd = f"AUDIO_PLAY:{len(pcm_bytes)}\n"
+                if self.callback_log:
+                    self.callback_log(f"TX ➔ {cmd.strip()}")
+                self.serial_conn.write(cmd.encode('utf-8'))
+                self.serial_conn.flush()
+
+                t0 = time.time()
+                ready = False
+                while time.time() - t0 < 3:
+                    if self.serial_conn.in_waiting > 0:
+                        linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
+                        if "AUDIO_PLAY_READY" in linea:
+                            ready = True
+                            break
+                    time.sleep(0.05)
+
+                if not ready:
+                    return False, "TIMEOUT AUDIO_PLAY_READY"
+
+                self.serial_conn.write(pcm_bytes)
+                self.serial_conn.flush()
+                return True, "AUDIO_PLAY_OK"
+            except Exception as e:
+                return False, str(e)
+
+    def capturar_audio_mic(self, duracion_sec=4):
         """Solicita al ESP32 grabar con INMP441 y enviar los bytes PCM por Serial."""
         if not self.conectado or not self.serial_conn:
             return None, "ESP32 no conectado"
@@ -187,7 +220,7 @@ class ComunicacionESP32:
 
                 inicio = time.time()
                 bytes_esperados = 0
-                while time.time() - inicio < 5:
+                while time.time() - inicio < 6:
                     if self.serial_conn.in_waiting > 0:
                         linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
                         if self.callback_log and linea:

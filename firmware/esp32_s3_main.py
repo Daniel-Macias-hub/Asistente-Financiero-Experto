@@ -1,7 +1,7 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Animación OLED de Osciloscopio + Ventana de Grabación 4s (Pre-Asignación 128KB RAM)
-# Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
+# Bucle Continuo con Animación OLED de Osciloscopio + Ventana de Grabación 4s + Streaming Bocina MAX98357A
+# Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START, AUDIO_PLAY:<len>
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -37,9 +37,9 @@ I2S_SPK_SD  = 7
 
 SAMPLE_RATE = 16000
 RECORD_SECS = 4
-BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS  # 128,000 bytes (4 segundos de grabación de voz)
+BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS  # 128,000 bytes (4 segundos de grabación)
 
-# Pre-asignación Estática de Búfer Global en RAM al arrancar el módulo (Evita memory allocation failed)
+# Pre-asignación Estática de Búfer Global en RAM al arrancar el módulo
 gc.collect()
 AUDIO_RAM = bytearray(BUFFER_SIZE_16BIT)
 READ_BUF  = bytearray(512)
@@ -168,7 +168,7 @@ def mostrar_idle():
     oled.show()
 
 # ------------------------------------------------------------------------------
-# Pruebas de Hardware Físicas
+# Pruebas de Hardware Físicas y Reproducción de Audio PCM
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
     sys.stdout.write("[TEST] OLED Secuencia...\n")
@@ -208,6 +208,31 @@ def reproducir_tono_prueba_audio():
     audio_out.write(TONE_BUF)
     time.sleep(0.1)
     sys.stdout.write("AUDIO_TEST_OK\n")
+    safe_flush()
+
+def reproducir_audio_pcm_stream(total_bytes):
+    """Recibe bytes PCM por Serial y los reproduce inmediatamente en la bocina MAX98357A."""
+    if not audio_out or total_bytes <= 0:
+        sys.stdout.write("AUDIO_PLAY_ERR\n")
+        safe_flush()
+        return
+
+    sys.stdout.write(f"AUDIO_PLAY_READY:{total_bytes}\n")
+    safe_flush()
+
+    bytes_read = 0
+    stdin_buf = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
+    
+    while bytes_read < total_bytes:
+        to_read = min(512, total_bytes - bytes_read)
+        chunk = stdin_buf.read(to_read)
+        if chunk:
+            audio_out.write(chunk)
+            bytes_read += len(chunk)
+        else:
+            break
+            
+    sys.stdout.write("AUDIO_PLAY_OK\n")
     safe_flush()
 
 def grabar_y_transmitir_mic():
@@ -276,6 +301,13 @@ def main():
                         reproducir_tono_prueba_audio()
                     elif linea == "MIC_START":
                         grabar_y_transmitir_mic()
+                    elif linea.startswith("AUDIO_PLAY:"):
+                        try:
+                            n_b = int(linea.split(":")[1])
+                            reproducir_audio_pcm_stream(n_b)
+                        except Exception as ex_p:
+                            sys.stdout.write(f"AUDIO_PLAY_ERR:{ex_p}\n")
+                            safe_flush()
                     elif linea.startswith("STATE:"):
                         partes = linea.split(":")
                         if len(partes) >= 2:

@@ -573,6 +573,9 @@ class AsistenteApp:
         f_input = ttk.Frame(container, style="Card.TFrame")
         f_input.pack(side=tk.BOTTOM, fill='x', padx=15, pady=10)
 
+        btn_detener = ttk.Button(f_input, text="🛑 Detener Voz", command=detener_habla)
+        btn_detener.pack(side=tk.RIGHT, padx=4)
+
         btn_voz = ttk.Button(f_input, text="🎙️ Hablar (INMP441)", command=self.consultar_voz_mic_fisico)
         btn_voz.pack(side=tk.RIGHT, padx=4)
 
@@ -598,13 +601,17 @@ class AsistenteApp:
         self.consultar_texto()
 
     def desplegar_catalogo_completo(self):
-        """Muestra una ventana modal interactiva con TODO el conocimiento que posee la base de datos."""
+        """Muestra una ventana modal interactiva maximizada y totalmente acoplada al tamaño de cualquier pantalla."""
         win_cat = tk.Toplevel(self.root)
         win_cat.title("📖 Catálogo Completo de Conocimiento Financiero")
-        win_cat.geometry("880x620")
+        
+        # Ajustar dinámicamente al 85% de la pantalla actual o pantalla completa
+        w = max(900, int(self.root.winfo_width() * 0.90))
+        h = max(650, int(self.root.winfo_height() * 0.85))
+        win_cat.geometry(f"{w}x{h}")
         win_cat.configure(bg=BG_MAIN)
 
-        ttk.Label(win_cat, text="📖 CATÁLOGO COMPLETO DE CONOCIMIENTO FINANCIERO", font=FONT_SUB, foreground=CLR_GREEN).pack(pady=12)
+        ttk.Label(win_cat, text="📖 CATÁLOGO COMPLETO DE CONOCIMIENTO FINANCIERO", font=FONT_TITLE, foreground=CLR_GREEN).pack(pady=12)
         ttk.Label(win_cat, text="Selecciona cualquiera de las preguntas o comandos de la lista para consultarlo de inmediato:", font=FONT_BODY, foreground=TEXT_MUTED).pack(pady=(0, 8))
 
         f_scroll = ttk.Frame(win_cat, style="Card.TFrame")
@@ -614,14 +621,18 @@ class AsistenteApp:
         scrollbar = ttk.Scrollbar(f_scroll, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, style="Card.TFrame")
 
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_frame_id, width=event.width)
+
+        canvas_frame_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.bind("<Configure>", _on_canvas_configure)
+
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
 
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-
         canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         scrollbar.pack(side="right", fill="y")
 
@@ -635,10 +646,12 @@ class AsistenteApp:
             reglas = [dict(row) for row in cursor.fetchall()]
             conn.close()
 
-            ttk.Label(scrollable_frame, text="💡 CONCEPTOS FINANCIEROS DISPONIBLES", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(10, 5))
+            ttk.Label(scrollable_frame, text="💡 CONCEPTOS FINANCIEROS DISPONIBLES", font=("Segoe UI", 12, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(10, 5))
 
             f_grid1 = ttk.Frame(scrollable_frame, style="Card.TFrame")
-            f_grid1.pack(fill='x', padx=10, pady=5)
+            f_grid1.pack(fill='x', expand=True, padx=10, pady=5)
+            for col_i in range(4):
+                f_grid1.grid_columnconfigure(col_i, weight=1)
 
             col = 0
             row = 0
@@ -647,19 +660,21 @@ class AsistenteApp:
                 q_text = f"¿Qué es {nombre.lower()}?"
                 b = tk.Button(
                     f_grid1, text=q_text, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg=CLR_GREEN,
-                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=10, pady=8,
                     cursor="hand2", command=lambda txt=q_text, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
                 )
                 b.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
                 col += 1
-                if col >= 3:
+                if col >= 4:
                     col = 0
                     row += 1
 
-            ttk.Label(scrollable_frame, text="⚙️ ESTRATEGIAS Y REGLAS DE DECISIÓN", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
+            ttk.Label(scrollable_frame, text="⚙️ ESTRATEGIAS Y REGLAS DE DECISIÓN", font=("Segoe UI", 12, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
 
             f_grid2 = ttk.Frame(scrollable_frame, style="Card.TFrame")
-            f_grid2.pack(fill='x', padx=10, pady=5)
+            f_grid2.pack(fill='x', expand=True, padx=10, pady=5)
+            for col_i in range(4):
+                f_grid2.grid_columnconfigure(col_i, weight=1)
 
             col = 0
             row = 0
@@ -668,25 +683,27 @@ class AsistenteApp:
                 q_text = cond.capitalize()
                 b = tk.Button(
                     f_grid2, text=q_text, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg=CLR_CYAN,
-                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=10, pady=8,
                     cursor="hand2", command=lambda txt=q_text, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
                 )
                 b.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
                 col += 1
-                if col >= 3:
+                if col >= 4:
                     col = 0
                     row += 1
 
-            ttk.Label(scrollable_frame, text="📈 MERCADOS CRIPTO EN TIEMPO REAL Y VISIÓN IA", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
+            ttk.Label(scrollable_frame, text="📈 MERCADOS CRIPTO EN TIEMPO REAL Y VISIÓN IA", font=("Segoe UI", 12, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
 
             f_grid3 = ttk.Frame(scrollable_frame, style="Card.TFrame")
-            f_grid3.pack(fill='x', padx=10, pady=5)
+            f_grid3.pack(fill='x', expand=True, padx=10, pady=5)
+            for col_i in range(4):
+                f_grid3.grid_columnconfigure(col_i, weight=1)
 
             comandos_cripto = ["Precio de BTC", "Precio de ETH", "Precio de SOL", "Escanear Cripto"]
             for idx, c in enumerate(comandos_cripto):
                 b = tk.Button(
                     f_grid3, text=c, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg="#FFD700",
-                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=10, pady=8,
                     cursor="hand2", command=lambda txt=c, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
                 )
                 b.grid(row=0, column=idx, padx=4, pady=4, sticky="ew")
@@ -696,21 +713,25 @@ class AsistenteApp:
 
     def consultar_voz_mic_fisico(self):
         def _run():
-            self.agregar_mensaje("Usuario", "[Grabando desde micrófono INMP441 del ESP32-S3...]", "user")
+            self.agregar_mensaje("Usuario", "🎙️ [🔴 ESCUCHANDO — Habla ahora al micrófono INMP441 por 4 segundos...]", "user")
             esp32_comm.enviar_comando_oled("ESCUCHANDO")
-            metrics, res = esp32_comm.capturar_audio_mic(3)
+            metrics, res = esp32_comm.capturar_audio_mic(4)
             esp32_comm.enviar_comando_oled("PROCESANDO")
             
             if metrics and "pcm_bytes" in metrics:
+                dur = metrics.get("duracion", 4.0)
+                rms = metrics.get("rms", 0.0)
+                self.agregar_log_consola(f"[MIC AUDIO VERIFICADO] Captura recibida: {dur:.1f}s | Nivel RMS={rms:.1f}")
+                
                 texto = escuchar_desde_pcm(metrics["pcm_bytes"])
-                self.agregar_mensaje("Usuario", f"🎙️ {texto}", "user")
+                self.agregar_mensaje("Usuario", f"🎙️ \"{texto}\"", "user")
                 resp, _ = procesar_consulta(texto)
                 self.agregar_mensaje("Asistente Experto", resp, "bot")
                 esp32_comm.enviar_comando_oled("RESPONDIENDO")
                 hablar(resp)
                 esp32_comm.enviar_comando_oled("IDLE")
             else:
-                self.agregar_mensaje("Asistente Experto", "No se recibió audio del micrófono INMP441.", "bot")
+                self.agregar_mensaje("Asistente Experto", "No se recibió audio del micrófono INMP441. Verifica el cableado I2S en COM5.", "bot")
                 esp32_comm.enviar_comando_oled("ERROR")
 
         threading.Thread(target=_run, daemon=True).start()
