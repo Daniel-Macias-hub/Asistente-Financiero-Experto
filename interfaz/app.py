@@ -57,6 +57,7 @@ class AsistenteApp:
 
         self.cam_img_tk = None
         self.cam_hd_tk = None
+        self.ultimo_frame_cv2 = None
         self.stream_activo = False
         self.flash_encendido = False
         self.window_agrandar = None
@@ -353,16 +354,25 @@ class AsistenteApp:
         threading.Thread(target=_run, daemon=True).start()
 
     def toggle_video_stream(self):
-        """Activa o desactiva la transmisión de video en tiempo real de la ESP32-CAM."""
+        """Activa o desactiva la transmisión MJPEG en tiempo real de la ESP32-CAM."""
         if self.stream_activo:
             self.stream_activo = False
-            self.btn_stream.configure(text="📹 Video en Vivo")
-            self.agregar_log_consola("[CÁMARA] Transmisión de video en tiempo real detenida.")
+            try:
+                self.btn_stream.configure(text="📹 Video en Vivo")
+            except Exception:
+                pass
+            self.agregar_log_consola("[CÁMARA] Transmisión de video detenida.")
         else:
             self.stream_activo = True
-            self.btn_stream.configure(text="⏹️ Detener Video")
-            self.agregar_log_consola("[CÁMARA] Iniciando transmisión de video en tiempo real...")
+            try:
+                self.btn_stream.configure(text="⏹️ Detener Video")
+            except Exception:
+                pass
+            self.agregar_log_consola("[CÁMARA] Iniciando transmisión MJPEG en tiempo real...")
             threading.Thread(target=self._bucle_video_stream, daemon=True).start()
+            # Si la ventana HD está abierta, lanzar bucle HD dedicado
+            if self.window_agrandar and self.window_agrandar.winfo_exists():
+                threading.Thread(target=self._bucle_hd_canvas, daemon=True).start()
 
     def toggle_flash_led(self):
         """Conmuta el LED Flash sin bloquear el streaming continuo."""
@@ -390,43 +400,124 @@ class AsistenteApp:
             threading.Thread(target=_run, daemon=True).start()
 
     def abrir_visor_agrandado(self):
-        """Abre una ventana emergente HD (800x532 px) con barra de control completa."""
+        """Abre ventana emergente HD full con los 5 botones y MJPEG stream en tiempo real."""
         if self.window_agrandar and self.window_agrandar.winfo_exists():
             self.window_agrandar.lift()
             return
-            
+
         self.window_agrandar = tk.Toplevel(self.root)
         self.window_agrandar.title("📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)")
-        self.window_agrandar.geometry("850x640")
+        self.window_agrandar.geometry("1024x720")
+        self.window_agrandar.resizable(True, True)
         self.window_agrandar.configure(bg=BG_MAIN)
 
-        ttk.Label(self.window_agrandar, text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)", font=FONT_SUB, foreground=CLR_GREEN).pack(side=tk.TOP, pady=6)
+        ttk.Label(
+            self.window_agrandar,
+            text="📡 VISUALIZADOR DE CÁMARA HD (TIEMPO REAL)",
+            font=FONT_SUB, foreground=CLR_GREEN
+        ).pack(side=tk.TOP, pady=(8, 2))
 
-        # Barra de Control Integrada en la Ventana HD (Ubicada en la parte superior)
+        # ── Barra de Control con 5 botones ────────────────────────────────────
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
         f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=10, pady=6)
 
-        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.probar_camara_real).pack(side=tk.LEFT, padx=4)
-        ttk.Button(f_hd_ctrl, text="📹 Video en Vivo", command=self.toggle_video_stream).pack(side=tk.LEFT, padx=4)
-        ttk.Button(f_hd_ctrl, text="⚡ Flash ON/OFF", command=self.alternar_flash).pack(side=tk.LEFT, padx=4)
-        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=4)
-        ttk.Button(f_hd_ctrl, text="❌ Cerrar", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(f_hd_ctrl, text="📸 Foto HD",
+                   command=self._foto_hd).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="📹 Video en Vivo",
+                   command=self.toggle_video_stream).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="⚡ Flash ON/OFF",
+                   command=self.toggle_flash_led).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto",
+                   command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
+        ttk.Button(f_hd_ctrl, text="❌ Cerrar",
+                   command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
 
-        # Canvas de Video HD
-        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=520, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
-        self.canvas_agrandar.pack(side=tk.TOP, padx=10, pady=5, expand=True, fill='both')
+        # ── Canvas HD principal ────────────────────────────────────────────────
+        self.canvas_agrandar = tk.Canvas(
+            self.window_agrandar,
+            bg="#000000", highlightthickness=2,
+            highlightbackground=CLR_GREEN
+        )
+        self.canvas_agrandar.pack(
+            side=tk.TOP, padx=10, pady=(0, 10),
+            expand=True, fill='both'
+        )
 
-        # Si ya existe un fotograma en memoria, renderizarlo inmediatamente
-        if getattr(self, 'ultimo_frame_cv2', None) is not None:
-            try:
-                img_rgb = cv2.cvtColor(self.ultimo_frame_cv2, cv2.COLOR_BGR2RGB)
-                img_hd = Image.fromarray(img_rgb).resize((800, 520), Image.Resampling.LANCZOS)
-                self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
-                self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
-            except Exception:
-                pass
+        # Si ya hay un fotograma en RAM, mostrarlo de inmediato
+        if self.ultimo_frame_cv2 is not None:
+            self._renderizar_frame_hd(self.ultimo_frame_cv2)
         else:
-            self.canvas_agrandar.create_text(400, 260, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
+            self.canvas_agrandar.create_text(
+                512, 340,
+                text="Presiona  'Video en Vivo'  o  'Foto HD'  para iniciar transmisión",
+                fill=TEXT_MUTED, font=FONT_BODY
+            )
+
+        # Si el stream ya está activo, lanzar bucle HD
+        if self.stream_activo:
+            threading.Thread(target=self._bucle_hd_canvas, daemon=True).start()
+
+    # ── Helpers del Visor HD ─────────────────────────────────────────────────
+
+    def _foto_hd(self):
+        """Captura foto HD y la muestra en canvas_agrandar si está abierto."""
+        def _run():
+            url = self.entry_ip_cam.get().strip()
+            capture_url = url.replace("/stream", "/capture")
+            self.agregar_log_consola(f"[CÁMARA HD] Capturando foto desde {capture_url}...")
+            t0 = time.time()
+            try:
+                r = requests.get(capture_url, timeout=5)
+                t_trans = (time.time() - t0) * 1000
+                if r.status_code == 200:
+                    arr = np.frombuffer(r.content, np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        h, w, _ = img.shape
+                        self.ultimo_frame_cv2 = img
+                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                        self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+                        def _render_main():
+                            self.canvas_cam.delete("all")
+                            self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                            self.lbl_metrics_cam.configure(
+                                text=f"Res: {w}x{h} px | Size: {len(r.content)/1024:.1f} KB | Latencia: {t_trans:.0f} ms")
+                            self.lbl_status_cam.configure(
+                                text=f"Estado: 🟢 OK ({w}x{h} px, {t_trans:.0f} ms)", foreground=CLR_GREEN)
+                            self.lbl_ind_cam.configure(text="🟢 ESP32-CAM", foreground=CLR_GREEN)
+                        self.root.after(0, _render_main)
+                        self.root.after(0, lambda: self._renderizar_frame_hd(img))
+                        self.agregar_log_consola(
+                            f"[CÁMARA HD] ✓ {w}x{h} px, {len(r.content)/1024:.1f} KB, {t_trans:.0f} ms")
+            except Exception as e:
+                self.agregar_log_consola(f"[CÁMARA HD] ✗ Error: {e}")
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _renderizar_frame_hd(self, frame_bgr):
+        """Renderiza frame OpenCV en el canvas_agrandar (hilo GUI)."""
+        if self.canvas_agrandar is None:
+            return
+        try:
+            cw = self.canvas_agrandar.winfo_width()
+            ch = self.canvas_agrandar.winfo_height()
+            if cw < 10 or ch < 10:
+                cw, ch = 960, 620
+            img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            img_hd = Image.fromarray(img_rgb).resize((cw, ch), Image.Resampling.LANCZOS)
+            self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
+            self.canvas_agrandar.delete("all")
+            self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
+        except Exception:
+            pass
+
+    def _bucle_hd_canvas(self):
+        """Bucle dedicado que mantiene el canvas HD actualizado mientras stream_activo."""
+        while self.stream_activo:
+            if self.window_agrandar and self.window_agrandar.winfo_exists() and self.ultimo_frame_cv2 is not None:
+                frame = self.ultimo_frame_cv2.copy()
+                self.root.after(0, lambda f=frame: self._renderizar_frame_hd(f))
+            time.sleep(0.04)  # ~25 FPS en la ventana HD
 
     def _bucle_video_stream(self):
         base_url = self.entry_ip_cam.get().strip()
@@ -461,24 +552,13 @@ class AsistenteApp:
                             img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
                             self.cam_img_tk = ImageTk.PhotoImage(img_pil)
 
-                            # Preparar imagen HD si la ventana emergente está abierta
-                            if self.window_agrandar and self.window_agrandar.winfo_exists() and self.canvas_agrandar:
-                                img_hd = Image.fromarray(img_rgb).resize((800, 532), Image.Resampling.LANCZOS)
-                                self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
-
                             frames_count += 1
                             elapsed_fps = time.time() - t_start_fps
                             fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
 
                             def _update_stream_gui(fps_val=fps, width=w, height=h, size=len(jpg)/1024.0):
-                                # Limpiar canvas completamente para eliminar parpadeo del texto
                                 self.canvas_cam.delete("all")
                                 self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-                                
-                                if self.window_agrandar and self.window_agrandar.winfo_exists() and self.canvas_agrandar and self.cam_hd_tk:
-                                    self.canvas_agrandar.delete("all")
-                                    self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
-
                                 self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | FPS: {fps_val:.1f}")
                                 self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
                                 self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
@@ -506,10 +586,6 @@ class AsistenteApp:
                         img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
                         self.cam_img_tk = ImageTk.PhotoImage(img_pil)
 
-                        if self.window_agrandar and self.window_agrandar.winfo_exists() and self.canvas_agrandar:
-                            img_hd = Image.fromarray(img_rgb).resize((800, 532), Image.Resampling.LANCZOS)
-                            self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
-
                         frames_count += 1
                         elapsed_fps = time.time() - t_start_fps
                         fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
@@ -517,11 +593,6 @@ class AsistenteApp:
                         def _update_gui(fps_val=fps, lat=t_trans, width=w, height=h, size=size_kb):
                             self.canvas_cam.delete("all")
                             self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-
-                            if self.window_agrandar and self.window_agrandar.winfo_exists() and self.canvas_agrandar and self.cam_hd_tk:
-                                self.canvas_agrandar.delete("all")
-                                self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
-
                             self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | Latencia: {lat:.0f} ms | FPS: {fps_val:.1f}")
                             self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
                             self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
