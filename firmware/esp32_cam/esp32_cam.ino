@@ -118,6 +118,7 @@ static esp_err_t stream_handler(httpd_req_t *req) {
             esp_camera_fb_return(fb);
         }
         if (res != ESP_OK) break;
+        vTaskDelay(10 / portTICK_PERIOD_MS); // Liberar tiempo de CPU a la pila WiFi
     }
     return res;
 }
