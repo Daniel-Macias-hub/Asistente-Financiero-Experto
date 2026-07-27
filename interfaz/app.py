@@ -537,9 +537,37 @@ class AsistenteApp:
         container = ttk.Frame(self.tab_chat, style="Card.TFrame")
         container.pack(expand=True, fill='both', padx=10, pady=10)
 
+        # Catálogo de Preguntas Sugeridas
+        f_cat = ttk.Frame(container, style="Card.TFrame")
+        f_cat.pack(side=tk.BOTTOM, fill='x', padx=15, pady=(0, 5))
+
+        ttk.Label(f_cat, text="💡 CATÁLOGO DE PREGUNTAS SUGERIDAS (HAZ CLIC PARA CONSULTAR):", font=("Segoe UI", 9, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=5, pady=(4, 2))
+
+        f_chips = ttk.Frame(f_cat, style="Card.TFrame")
+        f_chips.pack(fill='x', padx=5, pady=2)
+
+        preguntas_sugeridas = [
+            "¿Qué es la inflación?",
+            "¿Cómo ahorrar dinero?",
+            "¿Qué es Bitcoin?",
+            "¿Qué es el interés compuesto?",
+            "¿Cómo reducir riesgo?",
+            "¿Qué es un ETF?",
+            "¿Qué es un mercado alcista?",
+            "Precio de BTC"
+        ]
+
+        for p in preguntas_sugeridas:
+            b = tk.Button(
+                f_chips, text=p, font=("Segoe UI", 9), bg=BG_ENTRY, fg=TEXT_MAIN,
+                activebackground=CLR_GREEN, activeforeground="#000000", bd=0, padx=8, pady=4,
+                command=lambda txt=p: self._ejecutar_pregunta_catalogo(txt)
+            )
+            b.pack(side=tk.LEFT, padx=3, pady=2)
+
         # Entrada de Texto y Voz abajo
         f_input = ttk.Frame(container, style="Card.TFrame")
-        f_input.pack(side=tk.BOTTOM, fill='x', padx=15, pady=15)
+        f_input.pack(side=tk.BOTTOM, fill='x', padx=15, pady=10)
 
         btn_voz = ttk.Button(f_input, text="🎙️ Hablar (INMP441)", command=self.consultar_voz_mic_fisico)
         btn_voz.pack(side=tk.RIGHT, padx=4)
@@ -558,7 +586,12 @@ class AsistenteApp:
         self.historial.tag_config('user', foreground=CLR_GREEN, font=("Segoe UI", 12, "bold"))
         self.historial.tag_config('bot', foreground=TEXT_MAIN)
 
-        self.agregar_mensaje("Asistente Experto", "¡Hola! Soy tu asistente financiero en tiempo real. Puedes realizar consultas o hablar a través del micrófono INMP441.\n", "bot")
+        self.agregar_mensaje("Asistente Experto", "¡Hola! Soy tu asistente financiero en tiempo real. Puedes seleccionar cualquier pregunta del catálogo o hablar a través del micrófono INMP441.\n", "bot")
+
+    def _ejecutar_pregunta_catalogo(self, texto):
+        self.entry_consulta.delete(0, tk.END)
+        self.entry_consulta.insert(0, texto)
+        self.consultar_texto()
 
     def consultar_voz_mic_fisico(self):
         def _run():
