@@ -1,6 +1,6 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Auto-Prueba Inicial (OLED + Audio + Mic)
+# Bucle Continuo con Animación OLED de Osciloscopio + Auto-Prueba
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
 import machine
@@ -86,8 +86,27 @@ audio_out = I2S(
 )
 
 # ------------------------------------------------------------------------------
-# Funciones de Animación OLED
+# Funciones de Animación OLED estilo Osciloscopio
 # ------------------------------------------------------------------------------
+def animacion_osciloscopio(titulo, frame, amplitud=14, frec=0.18):
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text(titulo, 8, 6, 1)
+    
+    # Línea central de referencia
+    for x in range(4, 124, 8):
+        oled.pixel(x, 40, 1)
+        
+    # Trazo de la onda senoidal continua
+    prev_x = 4
+    prev_y = 40 + int(amplitud * math.sin((4 + frame * 6) * frec))
+    for x in range(6, 124, 3):
+        y = 40 + int(amplitud * math.sin((x + frame * 6) * frec) * math.cos(x * 0.04))
+        oled.line(prev_x, prev_y, x, y, 1)
+        prev_x, prev_y = x, y
+    oled.show()
+
 def animacion_iniciando(paso):
     if not oled: return
     oled.fill(0)
@@ -99,34 +118,20 @@ def animacion_iniciando(paso):
     oled.show()
 
 def animacion_escuchando(frame):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text("🔴 ESCUCHANDO", 10, 12, 1)
-    for i in range(5):
-        h = 8 + (abs((frame + i * 2) % 8 - 4) * 4)
-        x = 28 + (i * 14)
-        oled.fill_rect(x, 48 - h, 8, h, 1)
-    oled.show()
+    animacion_osciloscopio("🔴 ESCUCHANDO", frame, amplitud=16, frec=0.20)
 
 def animacion_procesando(frame):
     if not oled: return
     oled.fill(0)
     oled.rect(0, 0, 128, 64, 1)
-    oled.text("⚙ PROCESANDO", 12, 15, 1)
+    oled.text("⚙ PROCESANDO", 12, 12, 1)
     dots = "." * ((frame % 4) + 1)
-    oled.text(f"Pensando{dots}", 18, 38, 1)
-    oled.show()
+    oled.text(f"Pensando{dots}", 18, 30, 1)
+    # Mini pulso de osciloscopio abajo
+    animacion_osciloscopio("⚙ PROCESANDO", frame, amplitud=6, frec=0.10)
 
 def animacion_respondiendo(frame):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text("🔊 RESPONDIENDO", 8, 12, 1)
-    for x in range(10, 118, 6):
-        h = int(8 * (1 + (x % 3 == frame % 3)))
-        oled.fill_rect(x, 38 - (h // 2), 4, h, 1)
-    oled.show()
+    animacion_osciloscopio("🔊 RESPONDIENDO", frame, amplitud=20, frec=0.28)
 
 def animacion_error(mensaje="ERR SISTEMA"):
     if not oled: return
@@ -140,15 +145,19 @@ def mostrar_idle():
     if not oled: return
     oled.fill(0)
     oled.rect(0, 0, 128, 64, 1)
-    oled.text("ASISTENTE FIN.", 8, 18, 1)
-    oled.text("Listo en PC", 18, 38, 1)
+    oled.text("ASISTENTE FIN.", 8, 15, 1)
+    oled.text("Listo en PC", 18, 32, 1)
+    # Trazo suave en idle
+    for x in range(10, 118, 4):
+        y = 52 + int(3 * math.sin(x * 0.1))
+        oled.pixel(x, y, 1)
     oled.show()
 
 # ------------------------------------------------------------------------------
 # Pruebas de Hardware Físicas
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
-    sys.stdout.write("[SELF-TEST] Probando animaciones OLED...\n")
+    sys.stdout.write("[SELF-TEST] Probando animaciones OLED (Osciloscopio)...\n")
     safe_flush()
     estados = [
         ("INICIANDO", animacion_iniciando),
@@ -163,7 +172,7 @@ def ejecutar_test_oled_secuencia():
         while time.time() - t_start < 1.2:
             func(f)
             f += 1
-            time.sleep(0.08)
+            time.sleep(0.06)
     mostrar_idle()
     sys.stdout.write("OLED_TEST_OK\n")
     safe_flush()
@@ -225,7 +234,7 @@ def main():
     sys.stdout.write("[ESP32-S3] Firmware listo en bucle infinito.\n")
     safe_flush()
 
-    # Auto-prueba de encendido (OLED + Audio)
+    # Auto-prueba de encendido (OLED Osciloscopio + Audio)
     try:
         ejecutar_test_oled_secuencia()
         reproducir_tono_prueba_audio()
