@@ -230,19 +230,23 @@ class AsistenteApp:
 
     def actualizar_lista_puertos(self):
         puertos = esp32_comm.obtener_puertos_disponibles()
-        val_actual = self.combo_puertos.get()
         self.combo_puertos['values'] = puertos
-        if val_actual in puertos:
-            self.combo_puertos.set(val_actual)
+        if "COM5" in puertos:
+            self.combo_puertos.set("COM5")
         elif puertos:
             self.combo_puertos.current(0)
         self.agregar_log_consola(f"[PUERTOS] Lista actualizada: {puertos}")
 
     def conectar_esp32_dinamico(self):
         puerto_sel = self.combo_puertos.get()
+        if "COM4" in puerto_sel and "COM5" in self.combo_puertos['values']:
+            self.agregar_log_consola("[CONEXIÓN AVISO] Se detectó COM4 (ESP32-CAM). Seleccionando automáticamente COM5 para el ESP32-S3...")
+            puerto_sel = "COM5"
+            self.combo_puertos.set("COM5")
+
         def _run():
-            self.agregar_log_consola(f"[CONEXIÓN] Verificando puerto (preferido: {puerto_sel})...")
-            exito, puerto_ok = esp32_comm.auto_conectar(puerto_sel)
+            self.agregar_log_consola(f"[CONEXIÓN] Intentando conectar a {puerto_sel} (ESP32-S3)...")
+            exito, puerto_ok = esp32_comm.conectar(puerto_sel)
             if exito and puerto_ok:
                 def _gui_ok():
                     self.combo_puertos.set(puerto_ok)
@@ -256,7 +260,7 @@ class AsistenteApp:
                     self.lbl_status_esp32.configure(text="Estado: 🔴 DESCONECTADO", foreground=CLR_RED)
                     self.lbl_ind_esp.configure(text="🔴 ESP32-S3", foreground=CLR_RED)
                 self.root.after(0, _gui_fail)
-                self.agregar_log_consola("[CONEXIÓN HINT] No se pudo abrir el puerto. Si Thonny o Arduino IDE tienen abierto el puerto COM, ciérralo en ese programa para liberarlo.")
+                self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por Thonny IDE, haz clic en el botón 'Detener (Stop)' en Thonny para liberarlo.")
 
         threading.Thread(target=_run, daemon=True).start()
 
