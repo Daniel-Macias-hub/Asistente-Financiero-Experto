@@ -59,6 +59,13 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     esp_err_t res = ESP_OK;
 
     digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
+    
+    // Vaciar el fotograma previo almacenado en el búfer de cola antes de la captura fresca
+    camera_fb_t * fb_old = esp_camera_fb_get();
+    if (fb_old) {
+        esp_camera_fb_return(fb_old);
+    }
+
     fb = esp_camera_fb_get();
 
     if (!fb) {

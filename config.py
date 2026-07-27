@@ -27,10 +27,10 @@ CAMERA_RESOLUTION = (640, 480)
 CAMERA_FPS_UPDATE_MS = 33  # ~30 FPS para actualización del canvas
 
 # === Visión (ORB) ===
-ORB_N_FEATURES = 1000  # Cantidad de features a detectar
-ORB_MIN_MATCHES = 15   # Mínimo de matches para considerar detección válida
-ORB_CONFIDENCE_THRESHOLD = 0.25  # Umbral mínimo de confianza
-DETECTION_CONSECUTIVE_FRAMES = 3  # Frames consecutivos para confirmar detección
+ORB_N_FEATURES = 1200  # Cantidad de features a detectar
+ORB_MIN_MATCHES = 8    # Mínimo de matches para considerar detección válida (sensible a ESP32-CAM)
+ORB_CONFIDENCE_THRESHOLD = 0.08  # Umbral mínimo de confianza
+DETECTION_CONSECUTIVE_FRAMES = 1  # Frames consecutivos para confirmar detección
 
 # === Mapeo de Criptomonedas ===
 # nombre_local → coingecko_id, binance_symbol

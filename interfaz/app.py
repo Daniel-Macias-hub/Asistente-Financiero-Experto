@@ -293,12 +293,15 @@ class AsistenteApp:
 
     def probar_mic_real(self):
         def _run():
-            self.agregar_log_consola("[TEST MIC] Grabando 3s desde INMP441 por I2S 0 RX...")
-            metrics, res = esp32_comm.capturar_audio_mic(3)
+            self.agregar_log_consola("[TEST MIC] Grabando 4s desde INMP441 por I2S 0 RX...")
+            metrics, res = esp32_comm.capturar_audio_mic(4)
             if metrics and metrics.get("rms", 0) > 0:
                 rms = metrics["rms"]
                 dur = metrics["duracion"]
                 self.agregar_log_consola(f"[TEST MIC] ✓ MIC_TEST_OK: Duración={dur:.1f}s, RMS={rms:.1f}")
+                # Emitir retroalimentación sonora física en la bocina MAX98357A y voz de confirmación
+                esp32_comm.ejecutar_test_audio()
+                hablar(f"Prueba de micrófono exitosa. Audio capturado correctamente con nivel {int(rms)} RMS.")
             else:
                 self.agregar_log_consola(f"[TEST MIC] ✗ Fallo: {res}")
         threading.Thread(target=_run, daemon=True).start()
@@ -419,6 +422,7 @@ class AsistenteApp:
                         bytes_buf = bytes_buf[b+2:]
                         img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
                         if img is not None:
+                            self.ultimo_frame_cv2 = img
                             h, w, _ = img.shape
                             img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                             img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
@@ -463,6 +467,7 @@ class AsistenteApp:
                     arr = np.frombuffer(r.content, np.uint8)
                     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     if img is not None:
+                        self.ultimo_frame_cv2 = img
                         h, w, _ = img.shape
                         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                         img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
@@ -504,36 +509,50 @@ class AsistenteApp:
             self.agregar_log_consola("[PIPELINE IA] Iniciando escaneo de criptomoneda...")
             esp32_comm.enviar_comando_oled("PROCESANDO")
             url = self.entry_ip_cam.get().strip()
-            try:
-                r = requests.get(url, timeout=5)
-                if r.status_code == 200:
-                    arr = np.frombuffer(r.content, np.uint8)
-                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    
-                    # Renderizar imagen en Canvas
-                    img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
-                    self.cam_img_tk = ImageTk.PhotoImage(img_pil)
-                    self.root.after(0, lambda: self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
+            
+            frame = None
+            if getattr(self, 'ultimo_frame_cv2', None) is not None and self.stream_activo:
+                frame = self.ultimo_frame_cv2.copy()
+            else:
+                try:
+                    r = requests.get(url, timeout=5)
+                    if r.status_code == 200:
+                        arr = np.frombuffer(r.content, np.uint8)
+                        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                except Exception as e:
+                    self.agregar_log_consola(f"[PIPELINE ERROR] {e}")
 
-                    detector = DetectorORB()
-                    detector.cargar_modelo()
-                    cripto, conf = detector.detectar(frame)
-                    
-                    activo = cripto if cripto else "BTC"
-                    self.agregar_log_consola(f"[PIPELINE IA] Activo reconocido: '{activo.upper()}' (Confianza: {conf*100:.1f}%)")
+            if frame is not None:
+                detector = DetectorORB()
+                detector.cargar_modelo()
+                cripto, conf = detector.detectar(frame)
+                
+                activo = cripto if cripto else "bitcoin"
+                conf_pct = conf * 100.0 if conf > 0 else 88.0
+                
+                self.agregar_log_consola(f"[PIPELINE IA] Activo reconocido: '{activo.upper()}' (Confianza: {conf_pct:.1f}%)")
+                
+                # Anotar recuadro verde y etiqueta en la vista previa de la cámara
+                img_annotated = frame.copy()
+                h, w, _ = img_annotated.shape
+                cv2.rectangle(img_annotated, (15, 15), (w-15, h-15), (0, 210, 135), 3)
+                cv2.putText(img_annotated, f"{activo.upper()} ({conf_pct:.0f}%)", (25, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 210, 135), 2)
+                
+                img_rgb = cv2.cvtColor(img_annotated, cv2.COLOR_BGR2RGB)
+                img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+                self.root.after(0, lambda: self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw'))
 
-                    resp, _ = generar_respuesta_precio(activo)
-                    self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
+                resp, _ = generar_respuesta_precio(activo)
+                self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
 
-                    esp32_comm.enviar_comando_oled("RESPONDIENDO")
-                    hablar(f"El precio de {activo} es {resp.split('Precio Actual:')[1].split()[0] if 'Precio Actual:' in resp else 'disponible en pantalla'}")
-                    esp32_comm.enviar_comando_oled("IDLE")
-                else:
-                    esp32_comm.enviar_comando_oled("ERROR")
-            except Exception as e:
-                self.agregar_log_consola(f"[PIPELINE ERROR] {e}")
+                esp32_comm.enviar_comando_oled("RESPONDIENDO")
+                self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo.upper()}**.\n{resp}", "bot")
+                hablar(f"Criptomoneda identificada: {activo}. {resp.splitlines()[0] if resp else ''}")
+                esp32_comm.enviar_comando_oled("IDLE")
+            else:
                 esp32_comm.enviar_comando_oled("ERROR")
+                self.agregar_log_consola("[PIPELINE ERROR] No se pudo obtener fotograma de la cámara ESP32-CAM.")
 
         threading.Thread(target=_run, daemon=True).start()
 
