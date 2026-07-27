@@ -178,15 +178,15 @@ def ejecutar_test_oled_secuencia():
         ("ESCUCHANDO", animacion_escuchando),
         ("PROCESANDO", animacion_procesando),
         ("RESPONDIENDO", animacion_respondiendo),
-        ("ERROR", lambda p: animacion_error("TEST ERROR"))
+        ("LISTO", lambda p: animacion_osciloscopio("✓ OLED OK", p, amplitud=12))
     ]
     for nombre, func in estados:
         t_start = time.time()
         f = 0
-        while time.time() - t_start < 1.0:
+        while time.time() - t_start < 0.8:
             func(f)
             f += 1
-            time.sleep(0.05)
+            time.sleep(0.04)
     mostrar_idle()
     sys.stdout.write("OLED_TEST_OK\n")
     safe_flush()

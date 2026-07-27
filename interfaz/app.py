@@ -298,10 +298,11 @@ class AsistenteApp:
             if metrics and metrics.get("rms", 0) > 0:
                 rms = metrics["rms"]
                 dur = metrics["duracion"]
+                pcm_bytes = metrics.get("pcm_bytes")
                 self.agregar_log_consola(f"[TEST MIC] ✓ MIC_TEST_OK: Duración={dur:.1f}s, RMS={rms:.1f}")
-                # Emitir retroalimentación sonora física en la bocina MAX98357A y voz de confirmación
-                esp32_comm.ejecutar_test_audio()
-                hablar(f"Prueba de micrófono exitosa. Audio capturado correctamente con nivel {int(rms)} RMS.")
+                if pcm_bytes:
+                    self.agregar_log_consola("[TEST MIC] 🔊 Reproduciendo tu voz grabada directamente en la bocina física MAX98357A...")
+                    esp32_comm.reproducir_audio_bocina_pcm(pcm_bytes)
             else:
                 self.agregar_log_consola(f"[TEST MIC] ✗ Fallo: {res}")
         threading.Thread(target=_run, daemon=True).start()
@@ -547,7 +548,19 @@ class AsistenteApp:
                 self.agregar_log_consola(f"[PIPELINE API] {resp.splitlines()[0] if resp else 'Sin datos'}")
 
                 esp32_comm.enviar_comando_oled("RESPONDIENDO")
-                self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo.upper()}**.\n{resp}", "bot")
+                
+                # Cambiar automáticamente a la pestaña "📈 Mercado en Tiempo Real" y cargar los datos del activo detectado
+                def _update_ui_and_tab():
+                    self.notebook.select(self.tab_mercado)
+                    self.entry_ticker.delete(0, tk.END)
+                    self.entry_ticker.insert(0, activo.upper())
+                    self.txt_mercado.configure(state='normal')
+                    self.txt_mercado.delete("1.0", tk.END)
+                    self.txt_mercado.insert(tk.END, f"📊 ANÁLISIS DE MERCADO EN TIEMPO REAL - {activo.upper()}\n\n{resp}")
+                    self.txt_mercado.configure(state='disabled')
+                    self.agregar_mensaje("Asistente Experto", f"🔍 [Análisis Visual IA]: Criptomoneda identificada: **{activo.upper()}**.\nDesplegando gráficas y datos de mercado en tiempo real...\n\n{resp}", "bot")
+
+                self.root.after(0, _update_ui_and_tab)
                 hablar(f"Criptomoneda identificada: {activo}. {resp.splitlines()[0] if resp else ''}")
                 esp32_comm.enviar_comando_oled("IDLE")
             else:
