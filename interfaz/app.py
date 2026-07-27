@@ -334,14 +334,57 @@ class AsistenteApp:
             threading.Thread(target=self._bucle_video_stream, daemon=True).start()
 
     def _bucle_video_stream(self):
-        url = self.entry_ip_cam.get().strip()
+        base_url = self.entry_ip_cam.get().strip()
+        # Usar /stream o /capture con sesión persistente para alta velocidad (>25 FPS)
+        capture_url = base_url.replace("/stream", "/capture")
+        stream_url = base_url.replace("/capture", "/stream")
+        
+        session = requests.Session()
         frames_count = 0
         t_start_fps = time.time()
-        
+
+        # Intentar stream MJPEG continuo primero para máxima velocidad
+        try:
+            r_stream = session.get(stream_url, stream=True, timeout=3)
+            if r_stream.status_code == 200:
+                bytes_buf = b""
+                for chunk in r_stream.iter_content(chunk_size=4096):
+                    if not self.stream_activo:
+                        break
+                    bytes_buf += chunk
+                    a = bytes_buf.find(b'\xff\xd8')
+                    b = bytes_buf.find(b'\xff\xd9')
+                    if a != -1 and b != -1:
+                        jpg = bytes_buf[a:b+2]
+                        bytes_buf = bytes_buf[b+2:]
+                        img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        if img is not None:
+                            h, w, _ = img.shape
+                            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                            self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+
+                            frames_count += 1
+                            elapsed_fps = time.time() - t_start_fps
+                            fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
+
+                            def _update_stream_gui(fps_val=fps, width=w, height=h, size=len(jpg)/1024.0):
+                                self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                                self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | FPS: {fps_val:.1f}")
+                                self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
+                                self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
+
+                            self.root.after(0, _update_stream_gui)
+                session.close()
+                return
+        except Exception:
+            pass
+
+        # Fallback a consulta ultrarrápida /capture con sesión HTTP persistente
         while self.stream_activo:
             t0 = time.time()
             try:
-                r = requests.get(url, timeout=2)
+                r = session.get(capture_url, timeout=2)
                 t_trans = (time.time() - t0) * 1000
                 if r.status_code == 200:
                     size_kb = len(r.content) / 1024.0
@@ -357,18 +400,19 @@ class AsistenteApp:
                         elapsed_fps = time.time() - t_start_fps
                         fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
 
-                        def _update_gui():
+                        def _update_gui(fps_val=fps, lat=t_trans, width=w, height=h, size=size_kb):
                             self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-                            self.lbl_metrics_cam.configure(text=f"Res: {w}x{h} px | Size: {size_kb:.1f} KB | Latencia: {t_trans:.0f} ms | FPS: {fps:.1f}")
-                            self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps:.1f} FPS)", foreground=CLR_GREEN)
-                            self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps:.1f} FPS)", foreground=CLR_GREEN)
+                            self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | Latencia: {lat:.0f} ms | FPS: {fps_val:.1f}")
+                            self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
+                            self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
 
                         self.root.after(0, _update_gui)
-                time.sleep(0.06)
+                time.sleep(0.01)
             except Exception as e:
                 self.agregar_log_consola(f"[STREAM ERR] {e}")
-                time.sleep(1.0)
+                time.sleep(0.5)
 
+        session.close()
         def _reset_gui():
             self.lbl_status_cam.configure(text="Estado: ⚪ IDLE", foreground=TEXT_MUTED)
         self.root.after(0, _reset_gui)

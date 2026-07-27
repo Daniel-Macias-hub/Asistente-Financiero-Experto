@@ -9,11 +9,16 @@ from config import COINGECKO_BASE_URL, CRYPTO_MAP
 
 
 def _obtener_coingecko_id(nombre):
-    """Convierte nombre local a CoinGecko ID."""
+    """Convierte nombre local o ticker a CoinGecko ID."""
     nombre_lower = nombre.lower().strip()
     if nombre_lower in CRYPTO_MAP:
         return CRYPTO_MAP[nombre_lower]["coingecko_id"]
-    # Intentar búsqueda directa
+    
+    # Buscar por símbolo (ej. "btc" -> "bitcoin")
+    for key, data in CRYPTO_MAP.items():
+        if data.get("symbol", "").lower() == nombre_lower:
+            return data["coingecko_id"]
+
     return nombre_lower
 
 

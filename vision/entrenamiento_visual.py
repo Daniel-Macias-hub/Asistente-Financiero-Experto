@@ -82,9 +82,9 @@ def reentrenar_descriptores(ruta_dataset=None):
         
         if descriptores_clase:
             descriptores_db[clase.lower()] = descriptores_clase
-            print(f"  ✓ {clase}: {len(descriptores_clase)} imágenes procesadas")
+            print(f"  [OK] {clase}: {len(descriptores_clase)} imágenes procesadas")
         else:
-            print(f"  ✗ {clase}: sin descriptores válidos")
+            print(f"  [ERROR] {clase}: sin descriptores válidos")
     
     if not descriptores_db:
         return False, "No se pudieron generar descriptores para ninguna clase."

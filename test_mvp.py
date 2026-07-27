@@ -1,5 +1,11 @@
 import os
+import sys
 import sqlite3
+
+# Reconfigurar stdout a UTF-8 para evitar errores de charmap en la consola de Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from conocimiento.database import inicializar_db, DB_PATH
 from entrenamiento.agregar_concepto import nuevo_concepto
 from entrenamiento.agregar_relacion import nueva_relacion
@@ -14,9 +20,9 @@ def ejecutar_pruebas():
     print("\n[Paso 3] Inicializando Base de Datos...")
     inicializar_db()
     if os.path.exists(DB_PATH):
-        print("✓ Base de datos creada/verificada exitosamente.")
+        print("[OK] Base de datos creada/verificada exitosamente.")
     else:
-        print("✗ Error al crear base de datos.")
+        print("[ERROR] Error al crear base de datos.")
 
     # 4. Insertar Concepto
     print("\n[Paso 4] Insertando concepto 'ETF'...")
@@ -66,17 +72,17 @@ def ejecutar_pruebas():
     print("\n[Paso 10] Probando Audio (pyttsx3)... Escucha los altavoces.")
     try:
         hablar("Prueba de audio completada.")
-        print("✓ Audio reproducido correctamente.")
+        print("[OK] Audio reproducido correctamente.")
     except Exception as e:
-        print(f"✗ Error reproduciendo audio: {e}")
+        print(f"[ERROR] Error reproduciendo audio: {e}")
 
     # 11. Probar Vosk
     print("\n[Paso 11] Probando modelo Vosk (Validación de carga)...")
     from audio.stt import MODEL_DIR
     if os.path.exists(MODEL_DIR):
-        print(f"✓ La carpeta del modelo Vosk existe en: {MODEL_DIR}")
+        print(f"[OK] La carpeta del modelo Vosk existe en: {MODEL_DIR}")
     else:
-        print(f"✗ ¡Modelo Vosk NO encontrado! Debes descargarlo en {MODEL_DIR}")
+        print(f"[ERROR] ¡Modelo Vosk NO encontrado! Debes descargarlo en {MODEL_DIR}")
 
     print("\n=== PRUEBAS FUNCIONALES FINALIZADAS ===")
 
