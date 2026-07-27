@@ -172,7 +172,7 @@ class ComunicacionESP32:
             except Exception as e:
                 return False, str(e)
 
-    def capturar_audio_mic(self, duracion_sec=3):
+    def capturar_audio_mic(self, duracion_sec=2):
         """Solicita al ESP32 grabar con INMP441 y enviar los bytes PCM por Serial."""
         if not self.conectado or not self.serial_conn:
             return None, "ESP32 no conectado"
@@ -187,7 +187,7 @@ class ComunicacionESP32:
 
                 inicio = time.time()
                 bytes_esperados = 0
-                while time.time() - inicio < 6:
+                while time.time() - inicio < 5:
                     if self.serial_conn.in_waiting > 0:
                         linea = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
                         if self.callback_log and linea:
@@ -209,7 +209,7 @@ class ComunicacionESP32:
                         break
 
                 audio_np = np.frombuffer(pcm_data, dtype=np.int16)
-                rms = float(np.sqrt(np.mean(audio_np.astype(np.float64)**2)))
+                rms = float(np.sqrt(np.mean(audio_np.astype(np.float64)**2))) if len(audio_np) > 0 else 0.0
                 max_peak = int(np.max(np.abs(audio_np))) if len(audio_np) > 0 else 0
 
                 metrics = {
