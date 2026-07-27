@@ -10,9 +10,12 @@ import base64
 import json
 import pickle
 import requests as _requests
+from dotenv import load_dotenv
 from config import (
     ORB_N_FEATURES, MODELOS_VISION_PATH, ORB_DESCRIPTORS_FILE
 )
+
+load_dotenv()
 
 # ── Colores dominantes por criptomoneda (HSV) para boost de confianza ─────────
 COLOR_PROFILES = {
@@ -28,23 +31,26 @@ COLOR_PROFILES = {
 # ── Gemini Vision Detector (Capa 1) ──────────────────────────────────────────
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/"
-    "models/gemini-1.5-flash:generateContent"
+    "models/gemini-3.6-flash:generateContent"
 )
 
 PROMPT_CRIPTO = (
-    "Analiza esta imagen e identifica si contiene el logotipo de una criptomoneda.\n\n"
-    "CRIPTOMONEDAS QUE RECONOCES:\n"
-    "- Bitcoin (BTC): Circulo naranja/dorado con letra B\n"
-    "- Ethereum (ETH): Diamante plateado o letra Xi\n"
-    "- Cardano (ADA): Circulo azul con patron de puntos blancos\n"
-    "- Solana (SOL): Barras diagonales degradado morado/verde\n"
-    "- XRP / Ripple (XRP): X azul oscuro\n"
-    "- Dogecoin (DOGE): Cara del Shiba Inu (perro) amarillo\n"
-    "- BNB / Binance (BNB): Diamante dorado con letras BNB\n\n"
-    "RESPONDE UNICAMENTE con este JSON, sin texto extra:\n"
-    "Si detectas logo: {\"cripto\":\"nombre\",\"confianza\":0.XX,\"razon\":\"breve\"}\n"
-    "Si NO hay logo:   {\"cripto\":null,\"confianza\":0.0,\"razon\":\"No detectado\"}\n\n"
-    "Donde nombre debe ser exactamente: bitcoin, ethereum, cardano, solana, xrp, dogecoin, bnb"
+    "Analiza esta imagen minuciosamente e identifica si contiene el logotipo de una criptomoneda.\n\n"
+    "CATÁLOGO DE CRIPTOMONEDAS SOPORTADAS:\n"
+    "- Bitcoin (BTC): Círculo naranja o dorado con la letra 'B' y dos barras verticales.\n"
+    "- Ethereum (ETH): Forma de octaedro / diamante geométrico plateado o azul.\n"
+    "- Cardano (ADA): Círculo o esfera azul con patrón concéntrico de múltiples puntos blancos o símbolo ADA.\n"
+    "- Solana (SOL): Tres barras paralelas diagonales o rectángulos con degradado morado, magenta y verde.\n"
+    "- XRP / Ripple (XRP): Logotipo con letra 'X' o tres gotas conectadas en tono azul.\n"
+    "- Dogecoin (DOGE): Cara del perro Shiba Inu amarillo o letra 'D' atravesada.\n"
+    "- BNB / Binance (BNB): Diamante o cuadrados amarillos/dorados entrelazados o texto BNB.\n\n"
+    "INSTRUCCIONES DE RESPUESTA:\n"
+    "Responde ÚNICAMENTE con este JSON estrictamente estructurado, sin bloques de código markdown:\n"
+    "{\"cripto\": \"nombre\", \"confianza\": 0.99, \"razon\": \"explicación breve de lo que observas\"}\n\n"
+    "Reglas:\n"
+    "1. 'nombre' debe ser EXCLUSIVAMENTE una de estas palabras clave en minúsculas: bitcoin, ethereum, cardano, solana, xrp, dogecoin, bnb.\n"
+    "2. Si la imagen muestra claramente uno de los logotipos anteriores, la confianza debe ser entre 0.85 y 1.0.\n"
+    "3. Si NO se detecta ningún logotipo conocido con claridad, responde: {\"cripto\": null, \"confianza\": 0.0, \"razon\": \"Sin coincidencias\"}"
 )
 
 
@@ -66,22 +72,45 @@ class DetectorGeminiVision:
                 "contents": [{
                     "parts": [
                         {"text": PROMPT_CRIPTO},
-                        {"inline_data": {"mime_type": "image/jpeg", "data": img_b64}}
+                        {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}}
                     ]
                 }],
-                "generationConfig": {"temperature": 0.05, "maxOutputTokens": 128}
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 512
+                }
             }
-            url = f"{GEMINI_ENDPOINT}?key={self.api_key}"
-            resp = _requests.post(url, json=payload, timeout=12)
-            if resp.status_code == 200:
-                texto = (resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-                         .strip().replace("```json", "").replace("```", "").strip())
-                r = json.loads(texto)
-                cripto = r.get("cripto")
-                confianza = float(r.get("confianza", 0.0))
-                if cripto and confianza > 0.4:
-                    return cripto.lower(), confianza
+            # Lista de modelos compatibles para failover automático si hay rate limit (429)
+            modelos_gemini = [
+                "gemini-3.6-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest"
+            ]
+
+            for model_name in modelos_gemini:
+                endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                url = f"{endpoint}?key={self.api_key}"
+                headers = {"Content-Type": "application/json", "X-goog-api-key": self.api_key}
+                try:
+                    resp = _requests.post(url, json=payload, headers=headers, timeout=10)
+                    if resp.status_code == 200:
+                        texto = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                        cleaned = texto.replace("```json", "").replace("```", "").strip()
+                        import re
+                        match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+                        if match:
+                            r = json.loads(match.group(0))
+                            cripto = r.get("cripto")
+                            confianza = float(r.get("confianza", 0.0))
+                            if cripto and str(cripto).lower() != "null" and confianza > 0.3:
+                                return str(cripto).lower().strip(), confianza
+                except Exception:
+                    continue
             return None, 0.0
+
+
+
+
         except Exception as e:
             print(f"[GeminiVision] Error: {e}")
             return None, 0.0
@@ -181,7 +210,8 @@ class DetectorCriptoUnificado:
     """
 
     def __init__(self):
-        api_key = os.environ.get("GEMINI_API_KEY", "")
+        load_dotenv()
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         self.gemini = DetectorGeminiVision(api_key)
         self.orb = DetectorORB()
         self.orb.cargar_modelo()
