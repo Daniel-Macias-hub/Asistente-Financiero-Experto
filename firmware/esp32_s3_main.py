@@ -3,14 +3,14 @@
 # Bucle Continuo con Animación OLED de Osciloscopio + Pre-Asignación Estática (64KB RAM)
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
-import machine
-from machine import Pin, I2S
-import ssd1306
+import machine  # pyrefly: ignore [missing-import] # type: ignore
+from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
+import ssd1306  # pyrefly: ignore [missing-import] # type: ignore
 import time
 import struct
 import sys
 import math
-import uselect
+import uselect  # pyrefly: ignore [missing-import] # type: ignore
 import gc
 
 def safe_flush():
@@ -58,7 +58,7 @@ except Exception as e:
 
 # Apagar NeoPixels integrados
 try:
-    import neopixel
+    import neopixel  # pyrefly: ignore [missing-import] # type: ignore
     for p in [48, 38, 8]:
         np = neopixel.NeoPixel(Pin(p), 1)
         np[0] = (0, 0, 0)
