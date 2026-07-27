@@ -404,17 +404,29 @@ class AsistenteApp:
 
         # Barra de Control Integrada en la Ventana HD (Ubicada en la parte superior)
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
-        f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=15, pady=6)
+        f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=10, pady=6)
 
-        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.probar_camara_real).pack(side=tk.LEFT, padx=6)
-        ttk.Button(f_hd_ctrl, text="⚡ Encender/Apagar Flash", command=self.alternar_flash).pack(side=tk.LEFT, padx=6)
-        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
-        ttk.Button(f_hd_ctrl, text="❌ Cerrar Ventana", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
+        ttk.Button(f_hd_ctrl, text="📸 Foto HD", command=self.probar_camara_real).pack(side=tk.LEFT, padx=4)
+        ttk.Button(f_hd_ctrl, text="📹 Video en Vivo", command=self.toggle_video_stream).pack(side=tk.LEFT, padx=4)
+        ttk.Button(f_hd_ctrl, text="⚡ Flash ON/OFF", command=self.alternar_flash).pack(side=tk.LEFT, padx=4)
+        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=4)
+        ttk.Button(f_hd_ctrl, text="❌ Cerrar", command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=4)
 
         # Canvas de Video HD
-        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=480, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
-        self.canvas_agrandar.pack(side=tk.TOP, padx=10, pady=5, expand=True)
-        self.canvas_agrandar.create_text(400, 240, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
+        self.canvas_agrandar = tk.Canvas(self.window_agrandar, width=800, height=520, bg="#000000", highlightthickness=1, highlightbackground=CLR_GREEN)
+        self.canvas_agrandar.pack(side=tk.TOP, padx=10, pady=5, expand=True, fill='both')
+
+        # Si ya existe un fotograma en memoria, renderizarlo inmediatamente
+        if getattr(self, 'ultimo_frame_cv2', None) is not None:
+            try:
+                img_rgb = cv2.cvtColor(self.ultimo_frame_cv2, cv2.COLOR_BGR2RGB)
+                img_hd = Image.fromarray(img_rgb).resize((800, 520), Image.Resampling.LANCZOS)
+                self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
+                self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
+            except Exception:
+                pass
+        else:
+            self.canvas_agrandar.create_text(400, 260, text="Inicia 'Video en Vivo' o 'Foto' para transmitir en HD...", fill=TEXT_MUTED, font=FONT_BODY)
 
     def _bucle_video_stream(self):
         base_url = self.entry_ip_cam.get().strip()
