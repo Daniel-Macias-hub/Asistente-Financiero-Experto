@@ -1,7 +1,7 @@
 /*
  * FIRMWARE ESP32-CAM (AI-Thinker OV2640)
- * CONTROL MANUAL DE FLASH LED (/led?state=1/0)
- * STREAM MJPEG Y FOTO CON ILUMINACIÓN FIJA SIN PARPADEO MOLESTO
+ * CONTROL MANUAL DE FLASH LED MULTISOCKET (/led?state=1/0 & /stream?flash=1/0)
+ * STREAM MJPEG Y FOTO CON ILUMINACIÓN FIJA SÓLIDA SIN PARPADEO
  */
 #include "esp_camera.h"
 #include <WiFi.h>
@@ -58,7 +58,6 @@ static esp_err_t capture_handler(httpd_req_t *req) {
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
 
-    // Mantener estado constante de LED sin parpadeos
     digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
     fb = esp_camera_fb_get();
 
@@ -81,6 +80,14 @@ static esp_err_t stream_handler(httpd_req_t *req) {
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
     char * part_buf[64];
+
+    char q_buf[32];
+    if (httpd_req_get_url_query_str(req, q_buf, sizeof(q_buf)) == ESP_OK) {
+        char param[16];
+        if (httpd_query_key_value(q_buf, "flash", param, sizeof(param)) == ESP_OK) {
+            flash_led_encendido = (atoi(param) == 1);
+        }
+    }
 
     res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
     if (res != ESP_OK) return res;
@@ -111,6 +118,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
 void startCameraServer() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
+    config.max_open_sockets = 7;
+    config.lru_purge_enable = true;
 
     httpd_uri_t capture_uri = {
         .uri       = "/capture",
