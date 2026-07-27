@@ -541,10 +541,14 @@ class AsistenteApp:
         f_cat = ttk.Frame(container, style="Card.TFrame")
         f_cat.pack(side=tk.BOTTOM, fill='x', padx=15, pady=(0, 5))
 
-        ttk.Label(f_cat, text="💡 CATÁLOGO DE PREGUNTAS SUGERIDAS (HAZ CLIC PARA CONSULTAR):", font=("Segoe UI", 9, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=5, pady=(4, 2))
+        f_cat_top = ttk.Frame(f_cat, style="Card.TFrame")
+        f_cat_top.pack(fill='x', padx=5, pady=(4, 2))
+
+        ttk.Label(f_cat_top, text="💡 CATÁLOGO DE PREGUNTAS Y COMANDOS SUGERIDOS:", font=("Segoe UI", 11, "bold"), foreground=CLR_GREEN).pack(side=tk.LEFT)
+        ttk.Button(f_cat_top, text="📖 Desplegar Todo el Conocimiento", command=self.desplegar_catalogo_completo).pack(side=tk.RIGHT)
 
         f_chips = ttk.Frame(f_cat, style="Card.TFrame")
-        f_chips.pack(fill='x', padx=5, pady=2)
+        f_chips.pack(fill='x', padx=5, pady=4)
 
         preguntas_sugeridas = [
             "¿Qué es la inflación?",
@@ -559,11 +563,11 @@ class AsistenteApp:
 
         for p in preguntas_sugeridas:
             b = tk.Button(
-                f_chips, text=p, font=("Segoe UI", 9), bg=BG_ENTRY, fg=TEXT_MAIN,
-                activebackground=CLR_GREEN, activeforeground="#000000", bd=0, padx=8, pady=4,
-                command=lambda txt=p: self._ejecutar_pregunta_catalogo(txt)
+                f_chips, text=p, font=("Segoe UI", 10, "bold"), bg=BG_ENTRY, fg=CLR_CYAN,
+                activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=10, pady=6,
+                cursor="hand2", command=lambda txt=p: self._ejecutar_pregunta_catalogo(txt)
             )
-            b.pack(side=tk.LEFT, padx=3, pady=2)
+            b.pack(side=tk.LEFT, padx=4, pady=3)
 
         # Entrada de Texto y Voz abajo
         f_input = ttk.Frame(container, style="Card.TFrame")
@@ -592,6 +596,98 @@ class AsistenteApp:
         self.entry_consulta.delete(0, tk.END)
         self.entry_consulta.insert(0, texto)
         self.consultar_texto()
+
+    def desplegar_catalogo_completo(self):
+        """Muestra una ventana modal interactiva con TODO el conocimiento que posee la base de datos."""
+        win_cat = tk.Toplevel(self.root)
+        win_cat.title("📖 Catálogo Completo de Conocimiento Financiero")
+        win_cat.geometry("880x620")
+        win_cat.configure(bg=BG_MAIN)
+
+        ttk.Label(win_cat, text="📖 CATÁLOGO COMPLETO DE CONOCIMIENTO FINANCIERO", font=FONT_SUB, foreground=CLR_GREEN).pack(pady=12)
+        ttk.Label(win_cat, text="Selecciona cualquiera de las preguntas o comandos de la lista para consultarlo de inmediato:", font=FONT_BODY, foreground=TEXT_MUTED).pack(pady=(0, 8))
+
+        f_scroll = ttk.Frame(win_cat, style="Card.TFrame")
+        f_scroll.pack(expand=True, fill='both', padx=15, pady=10)
+
+        canvas = tk.Canvas(f_scroll, bg=BG_ENTRY, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(f_scroll, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas, style="Card.TFrame")
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        scrollbar.pack(side="right", fill="y")
+
+        try:
+            from base_conocimiento.db import sqlite_db
+            conceptos = sqlite_db.obtener_todos_conceptos()
+            reglas = sqlite_db.obtener_todas_reglas()
+
+            ttk.Label(scrollable_frame, text="💡 CONCEPTOS FINANCIEROS DISPONIBLES", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(10, 5))
+
+            f_grid1 = ttk.Frame(scrollable_frame, style="Card.TFrame")
+            f_grid1.pack(fill='x', padx=10, pady=5)
+
+            col = 0
+            row = 0
+            for c in conceptos:
+                nombre = c.get('nombre', '')
+                q_text = f"¿Qué es {nombre.lower()}?"
+                b = tk.Button(
+                    f_grid1, text=q_text, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg=CLR_GREEN,
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    cursor="hand2", command=lambda txt=q_text, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
+                )
+                b.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
+                col += 1
+                if col >= 3:
+                    col = 0
+                    row += 1
+
+            ttk.Label(scrollable_frame, text="⚙️ ESTRATEGIAS Y REGLAS DE DECISIÓN", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
+
+            f_grid2 = ttk.Frame(scrollable_frame, style="Card.TFrame")
+            f_grid2.pack(fill='x', padx=10, pady=5)
+
+            col = 0
+            row = 0
+            for r in reglas:
+                cond = r.get('condicion', '')
+                q_text = cond.capitalize()
+                b = tk.Button(
+                    f_grid2, text=q_text, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg=CLR_CYAN,
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    cursor="hand2", command=lambda txt=q_text, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
+                )
+                b.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
+                col += 1
+                if col >= 3:
+                    col = 0
+                    row += 1
+
+            ttk.Label(scrollable_frame, text="📈 MERCADOS CRIPTO EN TIEMPO REAL Y VISIÓN IA", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN).pack(anchor='w', padx=10, pady=(15, 5))
+
+            f_grid3 = ttk.Frame(scrollable_frame, style="Card.TFrame")
+            f_grid3.pack(fill='x', padx=10, pady=5)
+
+            comandos_cripto = ["Precio de BTC", "Precio de ETH", "Precio de SOL", "Escanear Cripto"]
+            for idx, c in enumerate(comandos_cripto):
+                b = tk.Button(
+                    f_grid3, text=c, font=("Segoe UI", 10, "bold"), bg="#1A2332", fg="#FFD700",
+                    activebackground=CLR_GREEN, activeforeground="#000000", bd=1, relief="solid", padx=8, pady=5,
+                    cursor="hand2", command=lambda txt=c, w=win_cat: [w.destroy(), self._ejecutar_pregunta_catalogo(txt)]
+                )
+                b.grid(row=0, column=idx, padx=4, pady=4, sticky="ew")
+
+        except Exception as ex:
+            ttk.Label(scrollable_frame, text=f"Error cargando catálogo: {ex}", foreground=CLR_RED).pack(padx=10, pady=10)
 
     def consultar_voz_mic_fisico(self):
         def _run():

@@ -1,6 +1,6 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO UNIFICADO ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Bucle Continuo con Animación OLED de Osciloscopio + Pre-Asignación de Memoria PCM (Zero RAM Alloc Fail)
+# Bucle Continuo con Animación OLED de Osciloscopio + Pre-Asignación Estática (64KB RAM)
 # Comandos: PING, STATE, OLED_TEST, AUDIO_TEST, MIC_START
 # ==============================================================================
 import machine
@@ -36,15 +36,15 @@ I2S_SPK_WS  = 16
 I2S_SPK_SD  = 7
 
 SAMPLE_RATE = 16000
-RECORD_SECS = 3
-BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS
+RECORD_SECS = 2
+BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS  # 64,000 bytes (Ultra ligero)
 
-# Pre-asignación de Búfer Global en RAM para evitar fragmentación de memoria (Zero RAM Allocation Error)
+# Pre-asignación Estática de Búfer Global en RAM al arrancar el módulo
 gc.collect()
 AUDIO_RAM = bytearray(BUFFER_SIZE_16BIT)
-READ_BUF = bytearray(512)
-TEMP_BUF = bytearray(256)
-TONE_BUF = bytearray(SAMPLE_RATE * 2)
+READ_BUF  = bytearray(512)
+TEMP_BUF  = bytearray(256)
+TONE_BUF  = bytearray(SAMPLE_RATE * 2)
 
 # ------------------------------------------------------------------------------
 # Inicialización OLED SSD1306
@@ -218,7 +218,7 @@ def grabar_y_transmitir_mic():
 
     gc.collect()
     
-    # Limpiar búfer previo
+    # Limpiar búfer previo de la entrada I2S
     for _ in range(5):
         audio_in.readinto(TEMP_BUF)
 
