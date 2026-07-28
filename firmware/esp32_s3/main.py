@@ -1,7 +1,7 @@
 # ==============================================================================
 # FIRMWARE ARQUITECTURA STREAMING ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
 # Memoria ultra-optimizada sin grandes búferes globales (Cero MemoryError)
-# Micrófono INMP441 + Bocina MAX98357A + OLED SSD1306 + Control Serial UART
+# Micrófono INMP441 (Ganancia 14-bit) + Bocina MAX98357A (Reloj Estéreo 64BCLK)
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -39,11 +39,10 @@ SAMPLE_RATE = 16000
 RECORD_SECS = 4
 TOTAL_BYTES_RECORD = SAMPLE_RATE * 2 * RECORD_SECS  # 128,000 bytes para 4s
 
-# Búferes estáticos ultra pequeños en RAM (máximo 512 bytes por búfer)
+# Búferes estáticos ultra pequeños en RAM
 gc.collect()
-READ_BUF = bytearray(512)   # Recibe 128 muestras de 32-bit I2S del mic INMP441
-CONV_BUF = bytearray(256)   # Almacena 128 muestras de 16-bit PCM para streaming
-TONE_BUF = bytearray(512)   # Genera bloques senoidales de 256 muestras 16-bit
+READ_BUF = bytearray(512)   # Recibe muestras de 32-bit I2S del mic INMP441
+CONV_BUF = bytearray(256)   # Almacena muestras de 16-bit PCM para streaming PC
 
 # Verificación explícita de memoria libre
 mem_free_boot = gc.mem_free()
@@ -72,7 +71,7 @@ except Exception:
     pass
 
 # ------------------------------------------------------------------------------
-# Canales Audio I2S (0 RX: Micrófono / 1 TX: Bocina)
+# Canales Audio I2S (0 RX: Micrófono / 1 TX: Bocina MAX98357A en modo Estéreo)
 # ------------------------------------------------------------------------------
 audio_in = None
 try:
@@ -85,7 +84,7 @@ try:
         bits=32,
         format=I2S.MONO,
         rate=SAMPLE_RATE,
-        ibuf=1024
+        ibuf=2048
     )
 except Exception as e_mic:
     sys.stdout.write(f"[MIC ERR] {e_mic}\n")
@@ -93,6 +92,7 @@ except Exception as e_mic:
 
 audio_out = None
 try:
+    # MAX98357A requiere sincronismo de reloj estéreo (64 BCLK por trama WS)
     audio_out = I2S(
         1,
         sck=Pin(I2S_SPK_SCK),
@@ -100,9 +100,9 @@ try:
         sd=Pin(I2S_SPK_SD),
         mode=I2S.TX,
         bits=16,
-        format=I2S.MONO,
+        format=I2S.STEREO,
         rate=SAMPLE_RATE,
-        ibuf=1024
+        ibuf=2048
     )
 except Exception as e_spk:
     sys.stdout.write(f"[SPK ERR] {e_spk}\n")
@@ -171,7 +171,7 @@ def mostrar_idle():
     oled.show()
 
 # ------------------------------------------------------------------------------
-# Pruebas y Streaming de Audio (Sin reservas masivas de memoria RAM)
+# Pruebas y Streaming de Audio de Alta Fidelidad (Sin distorsión)
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
     sys.stdout.write("[TEST] OLED Secuencia...\n")
@@ -195,7 +195,7 @@ def ejecutar_test_oled_secuencia():
     safe_flush()
 
 def reproducir_tono_prueba_audio():
-    """Genera tono senoidal de 440 Hz en bloques de 512 bytes sin usar búfer global masivo."""
+    """Genera tono senoidal nítido de 440 Hz en bloques estéreo de 1024B para la bocina MAX98357A."""
     sys.stdout.write("[TEST] Tono de prueba 440 Hz en streaming...\n")
     safe_flush()
     if not audio_out:
@@ -205,17 +205,18 @@ def reproducir_tono_prueba_audio():
 
     gc.collect()
     freq = 440
-    amplitude = 12000
+    amplitude = 3500  # Amplitud limpia para evitar recortes en la bocina
     total_samples = SAMPLE_RATE  # 1 segundo = 16,000 muestras
     samples_done = 0
+    stereo_buf = bytearray(1024)
 
     while samples_done < total_samples:
         to_gen = min(256, total_samples - samples_done)
         for i in range(to_gen):
             s_idx = samples_done + i
             sample = int(amplitude * math.sin(2 * math.pi * freq * (s_idx / SAMPLE_RATE)))
-            struct.pack_into("<h", TONE_BUF, i * 2, sample)
-        audio_out.write(TONE_BUF[:to_gen * 2])
+            struct.pack_into("<hh", stereo_buf, i * 4, sample, sample)
+        audio_out.write(stereo_buf[:to_gen * 4])
         samples_done += to_gen
 
     time.sleep(0.1)
@@ -224,7 +225,7 @@ def reproducir_tono_prueba_audio():
     gc.collect()
 
 def reproducir_audio_pcm_stream(total_bytes):
-    """Recibe flujo de audio PCM por Serial y lo proyecta a la bocina I2S MAX98357A."""
+    """Recibe PCM por Serial, duplica muestras a estéreo y proyecta sonido nítido en MAX98357A."""
     if not audio_out or total_bytes <= 0:
         sys.stdout.write("AUDIO_PLAY_ERR\n")
         safe_flush()
@@ -237,11 +238,18 @@ def reproducir_audio_pcm_stream(total_bytes):
     bytes_read = 0
     stdin_buf = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
 
+    in_buf = bytearray(512)
+    out_buf = bytearray(1024)
+
     while bytes_read < total_bytes:
         to_read = min(512, total_bytes - bytes_read)
-        num_r = stdin_buf.readinto(READ_BUF, to_read)
+        num_r = stdin_buf.readinto(in_buf, to_read)
         if num_r and num_r > 0:
-            audio_out.write(READ_BUF[:num_r])
+            num_samples = num_r // 2
+            for i in range(num_samples):
+                s = struct.unpack_from("<h", in_buf, i * 2)[0]
+                struct.pack_into("<hh", out_buf, i * 4, s, s)
+            audio_out.write(out_buf[:num_samples * 4])
             bytes_read += num_r
         else:
             break
@@ -251,7 +259,7 @@ def reproducir_audio_pcm_stream(total_bytes):
     gc.collect()
 
 def grabar_y_transmitir_mic():
-    """Lee el micrófono INMP441 en bloques de 512B y transmite PCM por Serial inmediatamente."""
+    """Lee el mic INMP441 con desplazamiento de 14 bits (alta nitidez) y transmite por Serial."""
     if not audio_in:
         sys.stdout.write("MIC_DATA:0\n")
         safe_flush()
@@ -276,8 +284,9 @@ def grabar_y_transmitir_mic():
             for s_idx in range(num_samples):
                 if bytes_written + (out_idx * 2) >= TOTAL_BYTES_RECORD:
                     break
-                val_32 = struct.unpack("<i", READ_BUF[s_idx*4 : (s_idx+1)*4])[0]
-                val_16 = val_32 >> 16
+                val_32 = struct.unpack_from("<i", READ_BUF, s_idx * 4)[0]
+                # Desplazamiento de 14 bits: conserva 16 bits completos del INMP441
+                val_16 = max(-32768, min(32767, val_32 >> 14))
                 struct.pack_into("<h", CONV_BUF, out_idx * 2, val_16)
                 out_idx += 1
 
