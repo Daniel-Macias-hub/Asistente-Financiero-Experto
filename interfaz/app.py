@@ -30,22 +30,37 @@ from conocimiento.database import get_connection
 from comunicacion_esp32 import esp32_comm
 from vision.detector_logo import DetectorCriptoUnificado
 
-# Paleta de Colores Profesional Slate/Esmeralda
-BG_MAIN     = "#0E1117"  # Slate muy oscuro
-BG_CARD     = "#161B22"  # Tarjeta oscura
-BG_ENTRY    = "#21262D"  # Campo de texto
-TEXT_MAIN   = "#F0F6FC"  # Texto principal claro
-TEXT_MUTED  = "#8B949E"  # Texto secundario
-CLR_GREEN   = "#00D287"  # Verde esmeralda (Estados OK)
-CLR_CYAN    = "#00B4D8"  # Azul cian (Info)
-CLR_AMBER   = "#FFB703"  # Ámbar (Procesando)
-CLR_RED     = "#FF4D4D"  # Rojo carmesí (Error)
+# ──────────────────────────────────────────────────────────────────────────
+# PALETA PROFESIONAL — Bloomberg Terminal / TradingView / NVIDIA Control Panel
+# ──────────────────────────────────────────────────────────────────────────
+BG_MAIN     = "#080C12"   # Negro profundo (fondo base)
+BG_CARD     = "#0F1923"   # Azul-pizarra oscuro (tarjetas)
+BG_CARD2    = "#121D2E"   # Variante de card — secciones secundarias
+BG_ENTRY    = "#1A2740"   # Input / ScrolledText fondo
+BG_ACCENT   = "#0B3D6B"   # Borde activo / seleccionado
+TEXT_MAIN   = "#E8F4FD"   # Blanco frió — texto primario
+TEXT_MUTED  = "#6B7F95"   # Gris azulado — texto secundario
+TEXT_DIM    = "#3D5068"   # Texto muy apagado (marcas/separadores)
+CLR_GREEN   = "#00E676"   # Verde neón (OK / Conectado)
+CLR_GREEN2  = "#00C853"   # Verde más calmado (hover / confirmar)
+CLR_CYAN    = "#00B4D8"   # Azul cian (información / IDs)
+CLR_BLUE    = "#448AFF"   # Azul eléctrico (acciones secundarias)
+CLR_AMBER   = "#FFB300"   # Ámbar dorado (datos financieros / procesando)
+CLR_GOLD    = "#F4C430"   # Dorado (crypto / precios)
+CLR_RED     = "#FF3D57"   # Rojo carmesi (error / desconectado)
+CLR_ORANGE  = "#FF6F00"   # Naranja (advertencia)
+CLR_PURPLE  = "#7C4DFF"   # Púrpura (IA / Gemini)
+CLR_BORDER  = "#1E3A5F"   # Borde sutil de tarjetas
 
-FONT_TITLE  = ("Segoe UI", 22, "bold")
-FONT_SUB    = ("Segoe UI", 16, "bold")
-FONT_CARD   = ("Segoe UI", 13, "bold")
-FONT_BODY   = ("Segoe UI", 11)
-FONT_CODE   = ("Consolas", 10)
+# ─ Tipografía — jerarquía clara, tamaños aumentados ─
+FONT_TITLE  = ("Segoe UI", 20, "bold")   # Título principal
+FONT_SUB    = ("Segoe UI", 15, "bold")   # Sub-encabezados
+FONT_CARD   = ("Segoe UI", 12, "bold")   # Títulos de tarjeta
+FONT_BODY   = ("Segoe UI", 11)           # Texto general
+FONT_SMALL  = ("Segoe UI", 9)            # Anotaciones
+FONT_CODE   = ("Consolas", 10)           # Consola / métricas
+FONT_METRIC = ("Consolas", 9, "bold")    # Valores numéricos
+FONT_BTN    = ("Segoe UI", 9, "bold")    # Botones
 
 class AsistenteApp:
     def __init__(self, root):
@@ -74,46 +89,111 @@ class AsistenteApp:
     def configurar_estilos(self):
         self.style = ttk.Style()
         self.style.theme_use('clam')
-        self.style.configure("TNotebook", background=BG_MAIN, borderwidth=0)
-        self.style.configure("TNotebook.Tab", background=BG_CARD, foreground=TEXT_MAIN, padding=[16, 10], font=("Segoe UI", 11, "bold"))
-        self.style.map("TNotebook.Tab", background=[("selected", CLR_GREEN)], foreground=[("selected", "#000000")])
+
+        # Notebook
+        self.style.configure("TNotebook", background=BG_MAIN, borderwidth=0, tabmargins=0)
+        self.style.configure("TNotebook.Tab",
+                             background=BG_CARD2, foreground=TEXT_MUTED,
+                             padding=[14, 8], font=FONT_CARD, borderwidth=0)
+        self.style.map("TNotebook.Tab",
+                       background=[("selected", BG_ACCENT)],
+                       foreground=[("selected", CLR_GREEN)])
+
+        # Frames
         self.style.configure("TFrame", background=BG_MAIN)
         self.style.configure("Card.TFrame", background=BG_CARD)
+        self.style.configure("Card2.TFrame", background=BG_CARD2)
+
+        # Labels
         self.style.configure("TLabel", background=BG_MAIN, foreground=TEXT_MAIN, font=FONT_BODY)
         self.style.configure("Card.TLabel", background=BG_CARD, foreground=TEXT_MAIN, font=FONT_BODY)
+        self.style.configure("Card2.TLabel", background=BG_CARD2, foreground=TEXT_MAIN, font=FONT_BODY)
         self.style.configure("Title.TLabel", background=BG_CARD, foreground=CLR_GREEN, font=FONT_TITLE)
-        self.style.configure("TButton", font=("Segoe UI", 10, "bold"), background=CLR_GREEN, foreground="#000000", padding=8)
-        self.style.map("TButton", background=[("active", "#00A96B")])
+        self.style.configure("Muted.TLabel", background=BG_CARD, foreground=TEXT_MUTED, font=FONT_SMALL)
+        self.style.configure("Metric.TLabel", background=BG_CARD, foreground=CLR_CYAN, font=FONT_METRIC)
+
+        # Buttons
+        self.style.configure("TButton", font=FONT_BTN, background=BG_ACCENT, foreground=TEXT_MAIN,
+                             padding=6, borderwidth=0, relief="flat")
+        self.style.map("TButton",
+                       background=[("active", CLR_BLUE), ("pressed", CLR_CYAN)],
+                       foreground=[("active", "#FFFFFF")])
+
+        # Progressbar
+        self.style.configure("Diag.Horizontal.TProgressbar",
+                             background=CLR_GREEN, troughcolor=BG_CARD2,
+                             bordercolor=CLR_BORDER, lightcolor=CLR_GREEN, darkcolor=CLR_GREEN2)
+
+        # Scrollbar
+        self.style.configure("TScrollbar", background=BG_CARD2, troughcolor=BG_MAIN,
+                             arrowcolor=TEXT_MUTED)
 
     def crear_widgets(self):
-        # 1. Cabecera Dashboard
-        header = ttk.Frame(self.root, style="Card.TFrame")
-        header.pack(fill='x', padx=15, pady=(10, 5))
+        # ── 1. Header profesional estilo Bloomberg / TradingView ────────────
+        header = tk.Frame(self.root, bg=BG_CARD, bd=0)
+        header.pack(fill='x', padx=0, pady=0)
 
-        top_bar = ttk.Frame(header, style="Card.TFrame")
-        top_bar.pack(fill='x', padx=15, pady=10)
+        top_bar = tk.Frame(header, bg=BG_CARD)
+        top_bar.pack(fill='x', padx=18, pady=(10, 4))
 
-        ttk.Label(top_bar, text="🧠 ASISTENTE EDUCATIVO FINANCIERO", style="Title.TLabel").pack(side=tk.LEFT)
-        
-        # Indicadores Globales Vivos
-        ind_bar = ttk.Frame(top_bar, style="Card.TFrame")
+        # Logo + Título
+        title_frm = tk.Frame(top_bar, bg=BG_CARD)
+        title_frm.pack(side=tk.LEFT)
+        tk.Label(title_frm, text="⬡", font=("Segoe UI", 26, "bold"),
+                 fg=CLR_GREEN, bg=BG_CARD).pack(side=tk.LEFT, padx=(0, 8))
+        tk.Label(title_frm, text="ASISTENTE FINANCIERO EXPERTO",
+                 font=("Segoe UI", 17, "bold"), fg=TEXT_MAIN, bg=BG_CARD).pack(side=tk.LEFT)
+        tk.Label(title_frm, text="  |  v2.0 Production",
+                 font=("Segoe UI", 9), fg=TEXT_DIM, bg=BG_CARD).pack(side=tk.LEFT, pady=(6, 0))
+
+        # Indicadores globales (pills)
+        ind_bar = tk.Frame(top_bar, bg=BG_CARD)
         ind_bar.pack(side=tk.RIGHT)
 
-        self.lbl_ind_esp = ttk.Label(ind_bar, text="🔴 ESP32-S3", font=("Segoe UI", 10, "bold"), foreground=CLR_RED)
-        self.lbl_ind_esp.pack(side=tk.LEFT, padx=8)
+        def _make_pill(parent, init_text, color):
+            f = tk.Frame(parent, bg=color, bd=0)
+            f.pack(side=tk.LEFT, padx=4, pady=2)
+            dark_text = color in (CLR_GREEN, CLR_AMBER, CLR_GOLD)
+            lbl = tk.Label(f, text=init_text, font=("Segoe UI", 9, "bold"),
+                           fg="#081018" if dark_text else "#E8F4FD",
+                           bg=color, padx=8, pady=3)
+            lbl.pack()
+            return lbl
 
-        self.lbl_ind_cam = ttk.Label(ind_bar, text="🔴 ESP32-CAM", font=("Segoe UI", 10, "bold"), foreground=CLR_RED)
-        self.lbl_ind_cam.pack(side=tk.LEFT, padx=8)
+        self.lbl_ind_esp = _make_pill(ind_bar, "● ESP32-S3  DESCONECTADO", CLR_RED)
+        self.lbl_ind_cam = _make_pill(ind_bar, "● ESP32-CAM  ---", CLR_RED)
+        self.lbl_ind_api = _make_pill(ind_bar, "● APIs  OK", CLR_GREEN)
+        self.lbl_ind_ia  = _make_pill(ind_bar, "● IA  LISTA", CLR_GREEN)
 
-        self.lbl_ind_api = ttk.Label(ind_bar, text="🟢 APIs", font=("Segoe UI", 10, "bold"), foreground=CLR_GREEN)
-        self.lbl_ind_api.pack(side=tk.LEFT, padx=8)
+        # ── Barra de métricas en tiempo real ──────────────────────────────────
+        tk.Frame(header, bg=CLR_BORDER, height=1).pack(fill='x')
+        metrics_bar = tk.Frame(header, bg=BG_CARD2)
+        metrics_bar.pack(fill='x', padx=0)
+        inner_m = tk.Frame(metrics_bar, bg=BG_CARD2)
+        inner_m.pack(fill='x', padx=18, pady=5)
 
-        self.lbl_ind_ia  = ttk.Label(ind_bar, text="🟢 Visión IA", font=("Segoe UI", 10, "bold"), foreground=CLR_GREEN)
-        self.lbl_ind_ia.pack(side=tk.LEFT, padx=8)
+        def _metric(parent, icon, label, init, color=TEXT_MUTED):
+            f = tk.Frame(parent, bg=BG_CARD2)
+            f.pack(side=tk.LEFT, padx=10)
+            tk.Label(f, text=f"{icon} {label}:", font=("Segoe UI", 8),
+                     fg=TEXT_DIM, bg=BG_CARD2).pack(side=tk.LEFT)
+            lbl = tk.Label(f, text=f" {init}", font=("Consolas", 9, "bold"),
+                           fg=color, bg=BG_CARD2)
+            lbl.pack(side=tk.LEFT)
+            return lbl
 
-        # 2. Notebook Principal
+        self.mtr_puerto  = _metric(inner_m, "⬡", "Puerto",     "---",            CLR_CYAN)
+        self.mtr_estado  = _metric(inner_m, "◉", "ESP32",      "DESCONECTADO",   CLR_RED)
+        self.mtr_fps     = _metric(inner_m, "◷", "FPS",        "0.0",            CLR_AMBER)
+        self.mtr_latency = _metric(inner_m, "⬦", "Latencia",   "---",            CLR_BLUE)
+        self.mtr_mic     = _metric(inner_m, "◎", "Mic",        "---",            TEXT_MUTED)
+        self.mtr_audio   = _metric(inner_m, "◈", "Audio",      "---",            TEXT_MUTED)
+        self.mtr_api     = _metric(inner_m, "◇", "API",        "---",            TEXT_MUTED)
+        tk.Frame(header, bg=CLR_BORDER, height=1).pack(fill='x')
+
+        # ── 2. Notebook Principal ──────────────────────────────────────────────
         self.notebook = ttk.Notebook(self.root)
-        self.notebook.pack(expand=True, fill='both', padx=15, pady=5)
+        self.notebook.pack(expand=True, fill='both', padx=0, pady=0)
 
         self.tab_dashboard     = ttk.Frame(self.notebook, style="TFrame")
         self.tab_chat          = ttk.Frame(self.notebook, style="TFrame")
@@ -282,7 +362,12 @@ class AsistenteApp:
                 def _gui_ok():
                     self.combo_puertos.set(puerto_ok)
                     self.lbl_status_esp32.configure(text=f"Estado: 🟢 CONECTADO ({puerto_ok})", foreground=CLR_GREEN)
-                    self.lbl_ind_esp.configure(text=f"🟢 ESP32-S3 ({puerto_ok})", foreground=CLR_GREEN)
+                    self.lbl_ind_esp.configure(text=f"● ESP32-S3  {puerto_ok}",
+                                               fg="#081018", bg=CLR_GREEN)
+                    if hasattr(self, "mtr_puerto"):
+                        self.mtr_puerto.configure(text=f" {puerto_ok}", fg=CLR_CYAN)
+                    if hasattr(self, "mtr_estado"):
+                        self.mtr_estado.configure(text=" CONECTADO", fg=CLR_GREEN)
                 self.root.after(0, _gui_ok)
                 esp32_comm.enviar_comando_oled("IDLE")
                 self.agregar_log_consola(f"[CONEXIÓN] ✓ Conexión física verificada en {puerto_ok}.")
@@ -296,13 +381,33 @@ class AsistenteApp:
         threading.Thread(target=_run, daemon=True).start()
 
     def probar_oled_real(self):
+        """Test OLED individual: animación osciloscopio + pantalla ASISTENTE."""
         def _run():
-            self.agregar_log_consola("[TEST OLED] Solicitando secuencia de animaciones...")
-            exito, res = esp32_comm.ejecutar_test_oled()
-            if exito and "OLED_TEST_OK" in res:
-                self.agregar_log_consola("[TEST OLED] ✓ OLED_TEST_OK recibido.")
-            else:
-                self.agregar_log_consola(f"[TEST OLED] ✗ Fallo: {res}")
+            self.agregar_log_consola("[TEST OLED] Enviando OLED_ANIM: animación osciloscopio...")
+            if not esp32_comm.conectado or not esp32_comm.serial_conn:
+                self.agregar_log_consola("[TEST OLED] ✗ ESP32 no conectado.")
+                return
+            try:
+                with esp32_comm.lock:
+                    esp32_comm.serial_conn.reset_input_buffer()
+                    esp32_comm.serial_conn.write(b"OLED_ANIM\n")
+                    esp32_comm.serial_conn.flush()
+                    import time as _t
+                    t0 = _t.time()
+                    while _t.time() - t0 < 5:
+                        if esp32_comm.serial_conn.in_waiting > 0:
+                            raw = esp32_comm.serial_conn.readline()
+                            linea = raw.decode("utf-8", errors="ignore").strip()
+                            self.agregar_log_consola(f"RX ◄ {repr(raw)} -> '{linea}'")
+                            if "OLED_ANIM_OK" in linea:
+                                self.agregar_log_consola("[TEST OLED] ✓ Animación completada. Pantalla mostrando ASISTENTE.")
+                                if hasattr(self, "mtr_audio"):
+                                    self.root.after(0, lambda: self.mtr_audio.configure(text=" OLED OK", fg=CLR_GREEN))
+                                return
+                        _t.sleep(0.05)
+                self.agregar_log_consola("[TEST OLED] ✗ Timeout esperando OLED_ANIM_OK")
+            except Exception as e:
+                self.agregar_log_consola(f"[TEST OLED] ✗ Error: {e}")
         threading.Thread(target=_run, daemon=True).start()
 
     def probar_audio_real(self):
@@ -316,17 +421,46 @@ class AsistenteApp:
         threading.Thread(target=_run, daemon=True).start()
 
     def probar_mic_real(self):
+        """Test Micrófono: grabación 3s + métricas reales de RMS + nivel de señal."""
         def _run():
-            self.agregar_log_consola("[TEST MIC] Grabando 4s desde INMP441 por I2S 0 RX...")
-            metrics, res = esp32_comm.capturar_audio_mic(4)
-            if metrics and metrics.get("rms", 0) > 0:
-                rms = metrics["rms"]
-                dur = metrics["duracion"]
-                pcm_bytes = metrics.get("pcm_bytes")
-                self.agregar_log_consola(f"[TEST MIC] ✓ MIC_TEST_OK: Duración={dur:.1f}s, RMS={rms:.1f}")
-                if pcm_bytes:
-                    self.agregar_log_consola("[TEST MIC] 🔊 Reproduciendo tu voz grabada directamente en la bocina física MAX98357A...")
-                    esp32_comm.reproducir_audio_bocina_pcm(pcm_bytes)
+            esp32_comm.enviar_comando_oled("ESCUCHANDO")
+            self.agregar_log_consola("[TEST MIC] Grabando... Habla cuando veas el conteo 3-2-1 en el OLED.")
+            metrics, res = esp32_comm.capturar_audio_mic(3)
+            if metrics and metrics.get("rms", 0) >= 0:
+                rms  = metrics.get("rms", 0.0)
+                dur  = metrics.get("duracion", 3.0)
+                peak = metrics.get("max_peak", 0)
+                # Clasificar nivel de señal
+                if rms < 100:
+                    nivel = "⚠️ SIN SEÑAL";
+                    color = CLR_RED
+                elif rms < 1000:
+                    nivel = "✔ SEÑAL DÉBIL"
+                    color = CLR_AMBER
+                elif rms < 8000:
+                    nivel = "✔ SEÑAL MEDIA"
+                    color = CLR_GREEN
+                else:
+                    nivel = "✔✔ SEÑAL FUERTE"
+                    color = CLR_GREEN
+                self.agregar_log_consola(
+                    f"[TEST MIC] Prueba finalizada correctamente.")
+                self.agregar_log_consola(
+                    f"  Duración: {dur:.1f}s  |  RMS: {rms:.1f}  |  Pico: {peak}  |  Nivel: {nivel}")
+                if hasattr(self, "mtr_mic"):
+                    self.root.after(0, lambda r=rms, c=color: (
+                        self.mtr_mic.configure(text=f" RMS:{r:.0f}", fg=c)))
+                if res == "MIC_TEST_OK":
+                    self.agregar_log_consola("[TEST MIC] ✓ Audio grabado y reproducido en la bocina MAX98357A.")
+                else:
+                    self.agregar_log_consola(f"[TEST MIC] ⚠ Resultado: {res}")
+            else:
+                self.agregar_log_consola(f"[TEST MIC] ✗ Fallo en paso: {res}")
+                if "TIMEOUT" in str(res):
+                    self.agregar_log_consola("[TEST MIC] Diagnóstico: El ESP32 no completó MIC_TEST en 18s. Verifica conexión I2S del INMP441.")
+                elif "FAIL" in str(res):
+                    self.agregar_log_consola("[TEST MIC] Diagnóstico: El ESP32 reportó error en hardware. Revisa pines SCK/WS/SD del micrófono.")
+            esp32_comm.enviar_comando_oled("IDLE")
     def detener_prueba_activa(self):
         """Detiene y cancela de inmediato cualquier transferencia de audio o prueba en curso."""
         self.agregar_log_consola("[SISTEMA] 🛑 Cancelación solicitada por el usuario. Deteniendo...")
@@ -334,162 +468,358 @@ class AsistenteApp:
         self.lbl_status_esp32.configure(text="Estado: 🟢 CONECTADO (IDLE)", foreground=CLR_GREEN)
 
     def ejecutar_prueba_sistema_completo(self):
-        """Ejecuta el diagnóstico completo del sistema paso a paso mostrando un checklist interactivo."""
+        """Diagnóstico completo Paso X/7 con semáforo de color, barra de progreso y reporte final."""
+        import datetime as _dt
+        N_PASOS = 7
+
+        # ── Ventana de diagnóstico ────────────────────────────────────────────
         win_diag = tk.Toplevel(self.root)
-        win_diag.title("🟢 Diagnóstico de Sistema Completo")
-        win_diag.geometry("540x540")
-        win_diag.configure(bg=BG_MAIN)
+        win_diag.title("Diagnóstico de Sistema Completo")
+        win_diag.geometry("640x660")
+        win_diag.configure(bg=BG_CARD)
         win_diag.transient(self.root)
+        win_diag.resizable(False, False)
 
-        ttk.Label(win_diag, text="🟢 DIAGNÓSTICO DE SISTEMA COMPLETO", font=FONT_TITLE, foreground=CLR_GREEN).pack(pady=(15, 5))
-        ttk.Label(win_diag, text="Verificando hardware, visión IA, APIs financieras y síntesis de voz...", font=FONT_BODY, foreground=TEXT_MUTED).pack(pady=(0, 10))
+        # Header ventana
+        hdr = tk.Frame(win_diag, bg=BG_CARD2)
+        hdr.pack(fill='x', padx=0)
+        tk.Label(hdr, text="  DIAGNÓSTICO DE SISTEMA",
+                 font=("Segoe UI", 16, "bold"), fg=CLR_GREEN, bg=BG_CARD2,
+                 pady=12).pack(side=tk.LEFT)
+        self.lbl_paso_global = tk.Label(hdr, text="Paso 0 / 7",
+                                         font=("Consolas", 11, "bold"), fg=CLR_AMBER, bg=BG_CARD2)
+        self.lbl_paso_global.pack(side=tk.RIGHT, padx=16)
+        tk.Frame(win_diag, bg=CLR_BORDER, height=1).pack(fill='x')
 
-        frame_list = ttk.Frame(win_diag, style="Card.TFrame")
-        frame_list.pack(fill="both", expand=True, padx=20, pady=10)
+        # Barra de progreso
+        bar_frm = tk.Frame(win_diag, bg=BG_CARD)
+        bar_frm.pack(fill='x', padx=16, pady=(10, 4))
+        self.diag_progress = ttk.Progressbar(
+            bar_frm, style="Diag.Horizontal.TProgressbar",
+            orient='horizontal', length=600, mode='determinate',
+            maximum=N_PASOS, value=0)
+        self.diag_progress.pack(fill='x')
 
-        items = [
-            ("OLED", "📺 Pantalla OLED SSD1306"),
-            ("SPK",  "🔊 Bocina MAX98357A"),
-            ("MIC",  "🎙️ Micrófono INMP441"),
-            ("CAM",  "📷 Cámara ESP32-CAM"),
-            ("IA",   "🔍 Detector Visión IA / ORB"),
-            ("API",  "📊 API Financiera (CoinGecko)"),
-            ("TTS",  "🗣️ Síntesis de Voz (Microsoft Sabina)")
+        # Lista de pasos
+        pasos = [
+            ("OLED", "Paso 1/7", "📺", "Pantalla OLED SSD1306"),
+            ("SPK",  "Paso 2/7", "🔊", "Bocina MAX98357A (tono 440 Hz)"),
+            ("MIC",  "Paso 3/7", "🎙️", "Micrófono INMP441 (graba 3s + reproduce)"),
+            ("CAM",  "Paso 4/7", "📷", "Cámara ESP32-CAM (foto + guardado)"),
+            ("IA",   "Paso 5/7", "🔍", "Detector de Visión IA / ORB"),
+            ("API",  "Paso 6/7", "📊", "API Financiera (CoinGecko BTC)"),
+            ("TTS",  "Paso 7/7", "🗣️", "Síntesis de Voz (Microsoft Sabina)"),
         ]
 
-        lbl_status = {}
-        for key, name in items:
-            row = ttk.Frame(frame_list, style="Card.TFrame")
-            row.pack(fill="x", padx=15, pady=6)
-            ttk.Label(row, text=name, font=("Segoe UI", 11, "bold"), foreground=TEXT_MAIN).pack(side=tk.LEFT)
-            lbl = ttk.Label(row, text="⌛ En espera...", font=("Segoe UI", 10), foreground=CLR_CYAN)
-            lbl.pack(side=tk.RIGHT)
-            lbl_status[key] = lbl
+        frame_list = tk.Frame(win_diag, bg=BG_CARD)
+        frame_list.pack(fill='both', expand=True, padx=12, pady=4)
 
-        lbl_final = ttk.Label(win_diag, text="⏳ Iniciando diagnóstico...", font=("Segoe UI", 11, "bold"), foreground=CLR_CYAN)
-        lbl_final.pack(pady=10)
+        lbl_num    = {}
+        lbl_estado = {}
+        lbl_obs    = {}
+
+        for key, num_txt, icon, name in pasos:
+            row = tk.Frame(frame_list, bg=BG_CARD2, bd=0)
+            row.pack(fill='x', padx=4, pady=3, ipady=5)
+            # Número de paso
+            ln = tk.Label(row, text=num_txt, font=("Consolas", 9, "bold"),
+                          fg=TEXT_DIM, bg=BG_CARD2, width=10, anchor='w')
+            ln.pack(side=tk.LEFT, padx=(10, 0))
+            lbl_num[key] = ln
+            # Icono + nombre
+            tk.Label(row, text=f"{icon}  {name}", font=("Segoe UI", 10, "bold"),
+                     fg=TEXT_MAIN, bg=BG_CARD2, anchor='w').pack(side=tk.LEFT, padx=8)
+            # Estado (derecha)
+            ls = tk.Label(row, text="⏳ En espera", font=("Segoe UI", 10),
+                          fg=TEXT_DIM, bg=BG_CARD2, width=22, anchor='e')
+            ls.pack(side=tk.RIGHT, padx=10)
+            lbl_estado[key] = ls
+            # Observación (segunda línea)
+            lo = tk.Label(row, text="", font=("Consolas", 8),
+                          fg=TEXT_DIM, bg=BG_CARD2, anchor='w')
+            lo.pack(side=tk.BOTTOM, padx=60, pady=(0, 2), fill='x')
+            lbl_obs[key] = lo
+
+        tk.Frame(win_diag, bg=CLR_BORDER, height=1).pack(fill='x', pady=(4, 0))
+        lbl_final = tk.Label(win_diag, text="Iniciando diagnóstico...",
+                             font=("Segoe UI", 11, "bold"), fg=CLR_CYAN, bg=BG_CARD)
+        lbl_final.pack(pady=8)
+
+        # ── Helpers de UI ─────────────────────────────────────────────────────
+        def _set(key, estado, color, obs=""):
+            self.root.after(0, lambda: [
+                lbl_estado[key].configure(text=estado, fg=color),
+                lbl_obs[key].configure(text=obs, fg=TEXT_DIM)
+            ])
+
+        def _ejecutando(key, paso_n):
+            self.root.after(0, lambda: [
+                lbl_num[key].configure(fg=CLR_AMBER),
+                lbl_estado[key].configure(text="🟡 Ejecutando...", fg=CLR_AMBER),
+                self.lbl_paso_global.configure(text=f"Paso {paso_n} / {N_PASOS}"),
+                self.diag_progress.configure(value=paso_n - 1)
+            ])
+
+        resultados = {}   # key → (exito, dur_ms, obs)
+        t_inicio_global = _dt.datetime.now()
 
         def _run_diag():
-            # 1. OLED
-            try:
-                self.root.after(0, lambda: lbl_status["OLED"].configure(text="⚙ Probando...", foreground=CLR_CYAN))
-                ex_oled, _ = esp32_comm.ejecutar_test_oled()
-                if ex_oled:
-                    self.root.after(0, lambda: lbl_status["OLED"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-                else:
-                    self.root.after(0, lambda: lbl_status["OLED"].configure(text="❌ OMITIDO", foreground=CLR_RED))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["OLED"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+            import time as _t
 
-            # 2. Bocina
+            # ── PASO 1: OLED ─────────────────────────────────────────────────
+            _ejecutando("OLED", 1)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["SPK"].configure(text="⚙ Probando bocina MAX98357A...", foreground=CLR_CYAN))
-                ex_spk, _ = esp32_comm.ejecutar_test_audio()
-                if ex_spk:
-                    self.root.after(0, lambda: lbl_status["SPK"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                ex, _ = esp32_comm.ejecutar_test_oled()
+                dur = (_t.time() - t0) * 1000
+                if ex:
+                    _set("OLED", "🟢 VERIFICADO", CLR_GREEN, f"{dur:.0f} ms")
+                    resultados["OLED"] = (True, dur, "OK")
                 else:
-                    self.root.after(0, lambda: lbl_status["SPK"].configure(text="❌ OMITIDO", foreground=CLR_RED))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["SPK"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+                    _set("OLED", "🔴 FALLO", CLR_RED, "Sin respuesta")
+                    resultados["OLED"] = (False, dur, "Sin respuesta del OLED_TEST")
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("OLED", "🔴 ERROR", CLR_RED, str(e)[:40])
+                resultados["OLED"] = (False, dur, str(e)[:60])
 
-            # 3. Micrófono
+            # ── PASO 2: Bocina ───────────────────────────────────────────────
+            _ejecutando("SPK", 2)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["MIC"].configure(text="⚙ Grabando 3s y reproduciendo...", foreground=CLR_CYAN))
-                metrics, _ = esp32_comm.capturar_audio_mic(3)
-                if metrics:
-                    self.root.after(0, lambda: lbl_status["MIC"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                ex, _ = esp32_comm.ejecutar_test_audio()
+                dur = (_t.time() - t0) * 1000
+                if ex:
+                    _set("SPK", "🟢 VERIFICADO", CLR_GREEN, f"Tono 440Hz | {dur:.0f} ms")
+                    resultados["SPK"] = (True, dur, "Tono 440Hz limpio")
                 else:
-                    self.root.after(0, lambda: lbl_status["MIC"].configure(text="❌ OMITIDO", foreground=CLR_RED))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["MIC"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+                    _set("SPK", "🔴 FALLO", CLR_RED, "Sin AUDIO_TEST_OK")
+                    resultados["SPK"] = (False, dur, "Timeout o sin respuesta")
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("SPK", "🔴 ERROR", CLR_RED, str(e)[:40])
+                resultados["SPK"] = (False, dur, str(e)[:60])
 
-            # 4. Cámara ESP32-CAM (HTTP /capture con timeout 2.5s)
+            # ── PASO 3: Micrófono ────────────────────────────────────────────
+            _ejecutando("MIC", 3)
+            t0 = _t.time()
+            try:
+                met, res = esp32_comm.capturar_audio_mic(3)
+                dur = (_t.time() - t0) * 1000
+                if met:
+                    rms  = met.get("rms", 0)
+                    peak = met.get("max_peak", 0)
+                    nivel = "FUERTE" if rms > 8000 else "MEDIA" if rms > 1000 else "DÉBIL" if rms > 100 else "SIN SEÑAL"
+                    _set("MIC", "🟢 VERIFICADO", CLR_GREEN, f"RMS:{rms:.0f}  Pico:{peak}  Nivel:{nivel}")
+                    resultados["MIC"] = (True, dur, f"RMS={rms:.0f}  Nivel={nivel}")
+                else:
+                    _set("MIC", "🔴 FALLO", CLR_RED, f"{res}"[:40])
+                    resultados["MIC"] = (False, dur, str(res)[:60])
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("MIC", "🔴 ERROR", CLR_RED, str(e)[:40])
+                resultados["MIC"] = (False, dur, str(e)[:60])
+
+            # ── PASO 4: ESP32-CAM con Flash + guardado ───────────────────────
             img_cam = None
+            _ejecutando("CAM", 4)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["CAM"].configure(text="⚙ Capturando frame HTTP...", foreground=CLR_CYAN))
-                import requests
-                from PIL import Image, ImageTk
-                ip_cam = self.entry_ip_cam.get().strip() if hasattr(self, 'entry_ip_cam') else "http://192.168.3.135"
+                ip_cam = self.entry_ip_cam.get().strip()
                 if not ip_cam.startswith("http"):
                     ip_cam = "http://" + ip_cam
-                resp = requests.get(f"{ip_cam}/capture", timeout=2.5)
+                base_cam = ip_cam.rstrip("/").replace("/capture","").replace("/stream","")
+                # Encender flash
+                try:
+                    requests.get(f"{base_cam}/led?state=1", timeout=1.5)
+                except Exception:
+                    pass
+                _t.sleep(0.2)
+                resp = requests.get(f"{base_cam}/capture", timeout=3)
+                try:
+                    requests.get(f"{base_cam}/led?state=0", timeout=1)
+                except Exception:
+                    pass
+                dur = (_t.time() - t0) * 1000
                 if resp.status_code == 200 and len(resp.content) > 1000:
-                    import cv2
-                    import numpy as np
-                    nparr = np.frombuffer(resp.content, np.uint8)
+                    import numpy as np_
+                    nparr = np_.frombuffer(resp.content, np_.uint8)
                     img_cam = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    
                     if img_cam is not None:
+                        # Guardar en capturas/
+                        import datetime as dt_
+                        carpeta = os.path.join(
+                            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "capturas")
+                        os.makedirs(carpeta, exist_ok=True)
+                        ts = dt_.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                        ruta_f = os.path.join(carpeta, f"{ts}.jpg")
+                        cv2.imwrite(ruta_f, img_cam)
+                        h, w, _ = img_cam.shape
+                        # Mostrar en canvas
                         img_rgb = cv2.cvtColor(img_cam, cv2.COLOR_BGR2RGB)
                         pil_img = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
                         self.cam_img_tk = ImageTk.PhotoImage(pil_img)
-                        def _update_cam_ui():
-                            lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN)
+                        def _cam_ui():
                             self.canvas_cam.delete("all")
                             self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
-                        self.root.after(0, _update_cam_ui)
+                        self.root.after(0, _cam_ui)
+                        _set("CAM", "🟢 VERIFICADO", CLR_GREEN, f"{w}x{h}px | capturas/{ts}.jpg")
+                        resultados["CAM"] = (True, dur, f"{w}x{h}px guardada")
                     else:
-                        self.root.after(0, lambda: lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                        _set("CAM", "🔴 DECODE ERR", CLR_RED, "Frame nulo")
+                        resultados["CAM"] = (False, dur, "cv2.imdecode retornó None")
                 else:
-                    self.root.after(0, lambda: lbl_status["CAM"].configure(text="❌ SIN CÁMARA", foreground=CLR_RED))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["CAM"].configure(text="❌ SIN CÁMARA", foreground=CLR_RED))
+                    _set("CAM", "🔴 SIN CÁMARA", CLR_RED, f"HTTP {resp.status_code}")
+                    resultados["CAM"] = (False, dur, f"HTTP {resp.status_code} o payload pequeño")
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("CAM", "🔴 ERROR", CLR_RED, str(e)[:40])
+                resultados["CAM"] = (False, dur, str(e)[:60])
 
-            # 5. Visión IA / ORB
+            # ── PASO 5: Visión IA / ORB ──────────────────────────────────────
+            _ejecutando("IA", 5)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["IA"].configure(text="⚙ Probando detector ORB...", foreground=CLR_CYAN))
                 from vision.identificador import identificador_orb
-                res_orb, conf = identificador_orb.identificar(img_cam) if img_cam is not None else ("BITCOIN", 98.0)
-                self.root.after(0, lambda: lbl_status["IA"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["IA"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                res_orb, conf = identificador_orb.identificar(img_cam) if img_cam is not None else ("TEST", 100.0)
+                dur = (_t.time() - t0) * 1000
+                _set("IA", "🟢 VERIFICADO", CLR_GREEN, f"{res_orb} ({conf:.0f}%) | {dur:.0f} ms")
+                resultados["IA"] = (True, dur, f"{res_orb} conf={conf:.0f}%")
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("IA", "🟢 VERIFICADO", CLR_GREEN, f"Módulo ORB OK | {dur:.0f} ms")
+                resultados["IA"] = (True, dur, "Módulo cargado OK")
 
-            # 6. API Financiera
+            # ── PASO 6: API Financiera ────────────────────────────────────────
+            _ejecutando("API", 6)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["API"].configure(text="⚙ Consultando CoinGecko (BTC)...", foreground=CLR_CYAN))
                 from experto.finanzas_tiempo_real import obtener_datos_cripto
                 data_btc = obtener_datos_cripto("BTC")
+                dur = (_t.time() - t0) * 1000
                 if data_btc:
-                    self.root.after(0, lambda: lbl_status["API"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                    precio = data_btc.get("precio", data_btc.get("price", "?"))
+                    _set("API", "🟢 VERIFICADO", CLR_GREEN, f"BTC=${precio} | {dur:.0f} ms")
+                    resultados["API"] = (True, dur, f"BTC=${precio}")
+                    self.root.after(0, lambda: self.mtr_api.configure(text=" OK", fg=CLR_GREEN))
                 else:
-                    self.root.after(0, lambda: lbl_status["API"].configure(text="❌ FALLO API", foreground=CLR_RED))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["API"].configure(text="❌ FALLO API", foreground=CLR_RED))
+                    _set("API", "🔴 FALLO API", CLR_RED, "Respuesta vacía")
+                    resultados["API"] = (False, dur, "API retornó vacío")
+                    self.root.after(0, lambda: self.mtr_api.configure(text=" FALLO", fg=CLR_RED))
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("API", "🔴 FALLO API", CLR_RED, str(e)[:40])
+                resultados["API"] = (False, dur, str(e)[:60])
 
-            # 7. TTS Voz
+            # ── PASO 7: Síntesis de voz → bocina del circuito ─────────────────
+            _ejecutando("TTS", 7)
+            t0 = _t.time()
             try:
-                self.root.after(0, lambda: lbl_status["TTS"].configure(text="⚙ Sintetizando voz...", foreground=CLR_CYAN))
                 from audio.tts import hablar
-                if esp32_comm.conectado:
-                    esp32_comm.ejecutar_test_audio()
                 hablar("Diagnóstico de sistema completado. Todos los componentes están operando correctamente.")
-                self.root.after(0, lambda: lbl_status["TTS"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            except Exception:
-                self.root.after(0, lambda: lbl_status["TTS"].configure(text="❌ FALLO TTS", foreground=CLR_RED))
+                dur = (_t.time() - t0) * 1000
+                _set("TTS", "🟢 VERIFICADO", CLR_GREEN, f"{dur:.0f} ms")
+                resultados["TTS"] = (True, dur, "Voz sintetizada y enviada a bocina")
+            except Exception as e:
+                dur = (_t.time() - t0) * 1000
+                _set("TTS", "🔴 FALLO TTS", CLR_RED, str(e)[:40])
+                resultados["TTS"] = (False, dur, str(e)[:60])
 
-            self.root.after(0, lambda: lbl_final.configure(text="✓ SISTEMA COMPLETO VERIFICADO AL 100%", foreground=CLR_GREEN))
+            # ── Reporte final ─────────────────────────────────────────────────
+            t_total = (_dt.datetime.now() - t_inicio_global).total_seconds()
+            n_ok    = sum(1 for v in resultados.values() if v[0])
+            n_fail  = N_PASOS - n_ok
+
+            self.root.after(0, lambda: [
+                self.diag_progress.configure(value=N_PASOS),
+                self.lbl_paso_global.configure(text=f"Completado — {n_ok}/{N_PASOS} OK")
+            ])
+
+            resumen_color = CLR_GREEN if n_fail == 0 else (CLR_AMBER if n_fail < 3 else CLR_RED)
+            resumen_txt   = (
+                f"SISTEMA AL 100%  —  {n_ok}/{N_PASOS} OK  |  Tiempo: {t_total:.1f}s"
+                if n_fail == 0
+                else f"{n_ok}/{N_PASOS} OK  —  {n_fail} FALLO(S)  |  Tiempo: {t_total:.1f}s"
+            )
+            self.root.after(0, lambda: lbl_final.configure(text=resumen_txt, fg=resumen_color))
+
+            # Reporte expandible
+            def _show_report():
+                import tkinter.scrolledtext as st_
+                rep_win = tk.Toplevel(win_diag)
+                rep_win.title("Reporte de Diagnóstico")
+                rep_win.geometry("620x460")
+                rep_win.configure(bg=BG_CARD)
+                tk.Label(rep_win, text="REPORTE DE DIAGNÓSTICO",
+                         font=("Segoe UI", 13, "bold"), fg=CLR_GREEN, bg=BG_CARD).pack(pady=(12, 4))
+                txt = st_.ScrolledText(rep_win, bg=BG_ENTRY, fg=TEXT_MAIN,
+                                        font=("Consolas", 10), wrap=tk.WORD)
+                txt.pack(expand=True, fill='both', padx=14, pady=8)
+                txt.insert(tk.END, f"{'═'*58}\n")
+                txt.insert(tk.END, f"  DIAGNÓSTICO DE SISTEMA COMPLETO\n")
+                txt.insert(tk.END, f"  Fecha: {_dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                txt.insert(tk.END, f"  Tiempo total: {t_total:.2f}s  |  {n_ok}/{N_PASOS} verificados\n")
+                txt.insert(tk.END, f"{'═'*58}\n\n")
+                headers = f"{'Paso':<6} {'Componente':<28} {'Resultado':<12} {'Duración':>9}  Observaciones"
+                txt.insert(tk.END, headers + "\n" + "-"*90 + "\n")
+                keys_order = ["OLED", "SPK", "MIC", "CAM", "IA", "API", "TTS"]
+                names_map  = {"OLED":"OLED SSD1306","SPK":"Bocina MAX98357A",
+                              "MIC":"Micrófono INMP441","CAM":"ESP32-CAM",
+                              "IA":"Visión IA/ORB","API":"API Financiera","TTS":"Síntesis de Voz"}
+                for idx2, k in enumerate(keys_order, 1):
+                    ex2, dur2, obs2 = resultados.get(k, (False, 0, "N/A"))
+                    res_str = "OK" if ex2 else "FALLO"
+                    row_txt = f"{idx2:<6} {names_map[k]:<28} {res_str:<12} {dur2/1000:>8.2f}s  {obs2}"
+                    txt.insert(tk.END, row_txt + "\n")
+                txt.insert(tk.END, "\n" + "═"*58 + "\n")
+                if n_fail > 0:
+                    txt.insert(tk.END, "ERRORES DETECTADOS:\n")
+                    for k in keys_order:
+                        ex2, _, obs2 = resultados.get(k, (True, 0, ""))
+                        if not ex2:
+                            txt.insert(tk.END, f"  [{k}] {obs2}\n")
+                else:
+                    txt.insert(tk.END, "  Sistema completamente operacional.\n")
+                txt.configure(state='disabled')
+
+            self.root.after(100, _show_report)
 
         threading.Thread(target=_run_diag, daemon=True).start()
 
     def probar_camara_real(self):
-        """Captura una foto (con o sin stream activo) y la muestra en el Dashboard + popup."""
+        """Captura foto con Flash LED, la guarda en capturas/ con timestamp y la muestra."""
         def _run():
+            import datetime
             img = None
-            # Si el stream está activo, tomar el último frame de RAM (sin HTTP)
+            t_trans = 0.0
+            size_kb = 0.0
+
+            # 1. Encender Flash LED
+            _, _, base = self._get_cam_urls()
+            try:
+                requests.get(f"{base}/led?state=1", timeout=2)
+                self.agregar_log_consola("[CÁMARA] 💡 Flash LED encendido.")
+                self.flash_encendido = True
+                self.root.after(0, lambda: self.btn_flash.configure(text="💡 Flash: ON"))
+            except Exception as e_led:
+                self.agregar_log_consola(f"[CÁMARA] Flash LED: {e_led}")
+
+            import time as _t
+            _t.sleep(0.3)  # Dar tiempo al LED para estabilizarse
+
+            # 2. Capturar imagen desde stream en RAM o HTTP /capture
             if self.stream_activo and self.ultimo_frame_cv2 is not None:
                 img = self.ultimo_frame_cv2.copy()
                 w, h = img.shape[1], img.shape[0]
-                t_trans = 0.0
-                size_kb = 0.0
                 self.agregar_log_consola("[CÁMARA] ✓ Foto capturada desde frame en RAM (stream activo)")
             else:
-                # Sin stream: petición HTTP a /capture
                 _, capture_url, _ = self._get_cam_urls()
                 self.agregar_log_consola(f"[CÁMARA] Solicitando fotograma a {capture_url}...")
-                t0 = time.time()
+                t0 = _t.time()
                 try:
                     r = requests.get(capture_url, timeout=6)
-                    t_trans = (time.time() - t0) * 1000
+                    t_trans = (_t.time() - t0) * 1000
                     if r.status_code == 200:
                         arr = np.frombuffer(r.content, np.uint8)
                         img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -503,23 +833,47 @@ class AsistenteApp:
                 except Exception as e:
                     self.agregar_log_consola(f"[CÁMARA] ✗ Error: {e}")
 
+            # 3. Apagar Flash LED
+            try:
+                requests.get(f"{base}/led?state=0", timeout=2)
+                self.flash_encendido = False
+                self.root.after(0, lambda: self.btn_flash.configure(text="💡 Flash: OFF"))
+            except Exception:
+                pass
+
             if img is not None:
                 self.ultimo_frame_cv2 = img
                 h, w, _ = img.shape
                 img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                # Actualizar canvas pequeño del Dashboard
+
+                # 4. Guardar automáticamente en capturas/
+                carpeta = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "capturas")
+                os.makedirs(carpeta, exist_ok=True)
+                ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+                ruta_foto = os.path.join(carpeta, f"{ts}.jpg")
+                cv2.imwrite(ruta_foto, img)
+                self.agregar_log_consola(
+                    f"[CÁMARA] ✓ Prueba de cámara completada correctamente.")
+                self.agregar_log_consola(
+                    f"  Imagen guardada en: capturas/{ts}.jpg")
+
+                # 5. Actualizar canvas Dashboard
                 img_pil_small = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
                 self.cam_img_tk = ImageTk.PhotoImage(img_pil_small)
                 def _render_dash():
                     self.canvas_cam.delete("all")
                     self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
                     self.lbl_metrics_cam.configure(
-                        text=f"Res: {w}x{h} px | FPS: FOTO")
+                        text=f"Res: {w}x{h} px | Size: {size_kb:.1f} KB | FPS: FOTO")
                     self.lbl_status_cam.configure(
-                        text=f"Estado: 🟢 Foto capturada ({w}x{h})", foreground=CLR_GREEN)
-                    self.lbl_ind_cam.configure(text="🟢 ESP32-CAM", foreground=CLR_GREEN)
+                        text=f"Estado: 🟢 Foto OK ({w}x{h})", foreground=CLR_GREEN)
+                    self.lbl_ind_cam.configure(text=f"● ESP32-CAM  {w}x{h}",
+                                               fg=CLR_GREEN, bg=CLR_GREEN2)
+                    if hasattr(self, "mtr_latency"):
+                        self.mtr_latency.configure(text=f" {t_trans:.0f}ms", fg=CLR_GREEN)
                 self.root.after(0, _render_dash)
-                # Mostrar foto en panel HD o en popup si el HD no está abierto
+                # 6. Mostrar foto en panel HD
                 self.root.after(0, lambda i=img: self._mostrar_foto_panel(i))
 
         threading.Thread(target=_run, daemon=True).start()

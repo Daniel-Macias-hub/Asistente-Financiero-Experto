@@ -249,7 +249,9 @@ class ComunicacionESP32:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
                 import base64
-                chunk_size = 1024
+                # Chunks grandes (4096 bytes) para minimizar overhead de overhead UART por round-trip
+                # El ESP32 acumula todo en RAM y hace un único write al DMA → sin underrun
+                chunk_size = 4096
                 for idx in range(0, len(pcm_bytes), chunk_size):
                     if self.cancelar_flag:
                         self.serial_conn.write(b"STOP\n")
@@ -259,19 +261,23 @@ class ComunicacionESP32:
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
-                    time.sleep(0.028)
+                    # Sin sleep artificial: el ESP32 ya acumula en buffer RAM antes de reproducir
 
                 self.serial_conn.write(b"AUDIO_PLAY_END\n")
                 self.serial_conn.flush()
 
-                # Esperar respuesta final AUDIO_PLAY_OK
+                # Esperar AUDIO_PLAY_OK — timeout = tamaño del audio + 5 segundos de margen
+                dur_audio_sec = len(pcm_bytes) / (16000 * 2)
+                timeout_ok = dur_audio_sec + 5.0
                 t_ok = time.time()
-                while time.time() - t_ok < 4:
+                while time.time() - t_ok < timeout_ok:
                     if self.cancelar_flag:
                         return False, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
+                        if self.callback_log and raw_line:
+                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
                         if "AUDIO_PLAY_OK" in linea:
                             break
                     time.sleep(0.05)
@@ -296,7 +302,10 @@ class ComunicacionESP32:
                 self.serial_conn.flush()
 
                 inicio = time.time()
-                while time.time() - inicio < 16:
+                rms_real = 0.0
+                min_real = 0
+                max_real = 0
+                while time.time() - inicio < 18:
                     if self.cancelar_flag:
                         return None, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
@@ -304,12 +313,27 @@ class ComunicacionESP32:
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
                             self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                        # Parsear métricas reales del firmware: [STEP 5.1] ... RMS=XXXX.XX
+                        if "[STEP 5.1]" in linea and "RMS=" in linea:
+                            try:
+                                rms_real = float(linea.split("RMS=")[1].split(",")[0].strip())
+                            except Exception:
+                                pass
+                            try:
+                                min_real = int(linea.split("Min=")[1].split(",")[0].strip())
+                            except Exception:
+                                pass
+                            try:
+                                max_real = int(linea.split("Max=")[1].split(",")[0].strip())
+                            except Exception:
+                                pass
                         if "MIC_TEST_OK" in linea:
                             metrics = {
                                 "duracion": 3.0,
                                 "rate": 16000,
-                                "rms": 3500.0,
-                                "max_peak": 12000,
+                                "rms": rms_real,
+                                "max_peak": max_real,
+                                "min_peak": min_real,
                                 "pcm_bytes": b"OK"
                             }
                             return metrics, "MIC_TEST_OK"
