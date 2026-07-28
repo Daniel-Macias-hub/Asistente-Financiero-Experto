@@ -226,11 +226,12 @@ class DetectorCriptoUnificado:
     def detectar(self, frame_bgr) -> tuple:
         if self.gemini.disponible:
             cripto, conf = self.gemini.detectar(frame_bgr)
-            if cripto and conf > 0.4:
+            if cripto and conf >= 0.70:
                 return cripto, conf, "gemini"
         if self.orb.esta_listo():
             cripto, conf = self.orb.detectar(frame_bgr)
-            if cripto and conf >= 0.55:
+            if cripto and conf >= 0.75:
                 return cripto, conf, "orb"
         return None, 0.0, "none"
+
 

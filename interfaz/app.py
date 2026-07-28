@@ -62,8 +62,14 @@ class AsistenteApp:
         self.flash_encendido = False
         self.window_agrandar = None
         self.canvas_agrandar = None
+        self.popup_foto = None
+        self.panel_foto_hd = None
+        self.canvas_cam_img_id = None
+        self.canvas_hd_img_id = None
+        self._foto_escaneada_tk = None
         self.configurar_estilos()
         self.crear_widgets()
+
 
     def configurar_estilos(self):
         self.style = ttk.Style()
@@ -586,27 +592,34 @@ class AsistenteApp:
 
         else:
             # ─ Popup pequeño solo si la ventana HD NO está abierta (Dashboard) ──
+            if getattr(self, 'popup_foto', None) is not None and self.popup_foto.winfo_exists():
+                try:
+                    self.popup_foto.destroy()
+                except Exception:
+                    pass
+
             img_popup = Image.fromarray(img_rgb)
             img_popup.thumbnail((480, 360), Image.Resampling.LANCZOS)
-            popup = tk.Toplevel(self.root)
-            popup.title(f"📸 Foto Capturada — {w}x{h} px")
-            popup.configure(bg=BG_MAIN)
-            popup.resizable(False, False)
+            self.popup_foto = tk.Toplevel(self.root)
+            self.popup_foto.title(f"📸 Foto Capturada — {w}x{h} px")
+            self.popup_foto.configure(bg=BG_MAIN)
+            self.popup_foto.resizable(False, False)
             tk_img = ImageTk.PhotoImage(img_popup)
-            lbl = tk.Label(popup, image=tk_img, bg="#000000")
+            lbl = tk.Label(self.popup_foto, image=tk_img, bg="#000000")
             lbl.image = tk_img
             lbl.pack(padx=6, pady=6)
-            ttk.Label(popup, text=f"{w}x{h} px",
+            ttk.Label(self.popup_foto, text=f"{w}x{h} px",
                       font=("Consolas", 9), foreground=CLR_CYAN).pack(pady=(0, 2))
-            f_b = ttk.Frame(popup, style="Card.TFrame")
+            f_b = ttk.Frame(self.popup_foto, style="Card.TFrame")
             f_b.pack(fill='x', padx=6, pady=4)
             ttk.Button(f_b, text="💾 Guardar PNG",
                        command=lambda: self._guardar_foto_png(img_bgr)).pack(side=tk.LEFT, padx=4)
             ttk.Button(f_b, text="📷 Escanear Cripto",
-                       command=lambda: [popup.destroy(),
+                       command=lambda: [self.popup_foto.destroy(),
                                         self.escanear_cripto_pipeline()]).pack(side=tk.LEFT, padx=4)
             ttk.Button(f_b, text="❌ Cerrar",
-                       command=popup.destroy).pack(side=tk.RIGHT, padx=4)
+                       command=self.popup_foto.destroy).pack(side=tk.RIGHT, padx=4)
+
 
     def _cerrar_panel_foto(self):
         """Cierra el panel lateral de foto dentro de la ventana HD."""
@@ -662,7 +675,7 @@ class AsistenteApp:
 
 
     def _renderizar_frame_hd(self, frame_bgr):
-        """Renderiza frame OpenCV en el canvas_agrandar (hilo GUI)."""
+        """Renderiza frame OpenCV en el canvas_agrandar (hilo GUI) sin parpadeos."""
         if self.canvas_agrandar is None:
             return
         try:
@@ -673,10 +686,15 @@ class AsistenteApp:
             img_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
             img_hd = Image.fromarray(img_rgb).resize((cw, ch), Image.Resampling.LANCZOS)
             self.cam_hd_tk = ImageTk.PhotoImage(img_hd)
-            self.canvas_agrandar.delete("all")
-            self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
+
+            if getattr(self, 'canvas_hd_img_id', None) is None:
+                self.canvas_agrandar.delete("all")
+                self.canvas_hd_img_id = self.canvas_agrandar.create_image(0, 0, image=self.cam_hd_tk, anchor='nw')
+            else:
+                self.canvas_agrandar.itemconfig(self.canvas_hd_img_id, image=self.cam_hd_tk)
         except Exception:
             pass
+
 
     def _bucle_hd_canvas(self):
         """Bucle dedicado que mantiene el canvas HD actualizado mientras stream_activo."""
@@ -720,8 +738,12 @@ class AsistenteApp:
                             fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
 
                             def _update_stream_gui(fps_val=fps, width=w, height=h, size=len(jpg)/1024.0):
-                                self.canvas_cam.delete("all")
-                                self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                                if getattr(self, 'canvas_cam_img_id', None) is None:
+                                    self.canvas_cam.delete("all")
+                                    self.canvas_cam_img_id = self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                                else:
+                                    self.canvas_cam.itemconfig(self.canvas_cam_img_id, image=self.cam_img_tk)
+
                                 self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | FPS: {fps_val:.1f}")
                                 self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
                                 self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
@@ -754,11 +776,16 @@ class AsistenteApp:
                         fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
 
                         def _update_gui(fps_val=fps, lat=t_trans, width=w, height=h, size=size_kb):
-                            self.canvas_cam.delete("all")
-                            self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                            if getattr(self, 'canvas_cam_img_id', None) is None:
+                                self.canvas_cam.delete("all")
+                                self.canvas_cam_img_id = self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                            else:
+                                self.canvas_cam.itemconfig(self.canvas_cam_img_id, image=self.cam_img_tk)
+
                             self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | Size: {size:.1f} KB | Latencia: {lat:.0f} ms | FPS: {fps_val:.1f}")
                             self.lbl_status_cam.configure(text=f"Estado: 🟢 STREAMING ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
                             self.lbl_ind_cam.configure(text=f"🟢 ESP32-CAM ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
+
 
                         self.root.after(0, _update_gui)
                 time.sleep(0.01)
@@ -859,9 +886,11 @@ class AsistenteApp:
                     )
 
                 self.root.after(0, _update_ui)
+                self.root.after(0, lambda: self._actualizar_paneles_foto_escaneada(img_ann, nombre_display, conf_pct, modo_icon))
                 sintesis = generar_sintesis_hablada(symbol)
                 hablar(sintesis)
                 esp32_comm.enviar_comando_oled("IDLE")
+
 
 
             else:
@@ -936,14 +965,30 @@ class AsistenteApp:
         self.entry_consulta.pack(side=tk.LEFT, expand=True, fill='x', ipady=8, padx=(0, 10))
         self.entry_consulta.bind("<Return>", lambda e: self.consultar_texto())
 
-        # Historial Chat Conversacional
-        self.historial = scrolledtext.ScrolledText(container, state='disabled', wrap=tk.WORD, font=("Segoe UI", 11), bg=BG_MAIN, fg=TEXT_MAIN, borderwidth=0)
-        self.historial.pack(side=tk.TOP, expand=True, fill='both', padx=10, pady=10)
+        # Split Central: Historial Chat (izq) y Panel Visual IA (der)
+        f_mid_chat = ttk.Frame(container, style="Card.TFrame")
+        f_mid_chat.pack(side=tk.TOP, expand=True, fill='both', padx=5, pady=5)
+
+        # Panel Derecho de Foto Escaneada (Chat)
+        self.panel_foto_chat = ttk.Frame(f_mid_chat, style="Card.TFrame", width=320)
+        self.panel_foto_chat.pack(side=tk.RIGHT, fill='y', padx=(8, 0))
+        self.panel_foto_chat.pack_propagate(False)
+
+        ttk.Label(self.panel_foto_chat, text="📸 ÚLTIMA FOTO ESCANEADA (IA)", font=FONT_CARD, foreground=CLR_AMBER).pack(pady=(10, 4))
+        self.lbl_foto_chat = tk.Label(self.panel_foto_chat, bg="#000000", text="Sin escaneo reciente", fg=TEXT_MUTED)
+        self.lbl_foto_chat.pack(padx=8, pady=6)
+        self.lbl_tag_chat = ttk.Label(self.panel_foto_chat, text="Estado: N/A", font=("Consolas", 10, "bold"), foreground=CLR_CYAN)
+        self.lbl_tag_chat.pack(pady=4)
+
+        # Historial Chat Conversacional (Izq)
+        self.historial = scrolledtext.ScrolledText(f_mid_chat, state='disabled', wrap=tk.WORD, font=("Segoe UI", 11), bg=BG_MAIN, fg=TEXT_MAIN, borderwidth=0)
+        self.historial.pack(side=tk.LEFT, expand=True, fill='both', padx=5, pady=5)
 
         self.historial.tag_config('user', foreground=CLR_GREEN, font=("Segoe UI", 12, "bold"))
         self.historial.tag_config('bot', foreground=TEXT_MAIN)
 
         self.agregar_mensaje("Asistente Experto", "¡Hola! Soy tu asistente financiero en tiempo real. Puedes seleccionar cualquier pregunta del catálogo o hablar a través del micrófono INMP441.\n", "bot")
+
 
     def _ejecutar_pregunta_catalogo(self, texto):
         self.entry_consulta.delete(0, tk.END)
@@ -1125,8 +1170,47 @@ class AsistenteApp:
         ttk.Button(f_in, text="📊 Consultar Mercado", command=self.consultar_mercado).pack(side=tk.LEFT, padx=5)
         ttk.Button(f_in, text="🎙️ Hablar sobre este Activo (INMP441)", command=self.consultar_voz_mercado).pack(side=tk.LEFT, padx=5)
 
-        self.txt_mercado = scrolledtext.ScrolledText(container, state='disabled', wrap=tk.WORD, font=("Segoe UI", 12), bg=BG_ENTRY, fg=TEXT_MAIN, height=12)
-        self.txt_mercado.pack(expand=True, fill='both', pady=10)
+        # Split Central: Datos de Mercado (izq) y Panel Visual IA (der)
+        f_mid_mercado = ttk.Frame(container, style="Card.TFrame")
+        f_mid_mercado.pack(expand=True, fill='both', pady=10)
+
+        # Panel Derecho de Foto Escaneada (Mercado)
+        self.panel_foto_mercado = ttk.Frame(f_mid_mercado, style="Card.TFrame", width=320)
+        self.panel_foto_mercado.pack(side=tk.RIGHT, fill='y', padx=(8, 0))
+        self.panel_foto_mercado.pack_propagate(False)
+
+        ttk.Label(self.panel_foto_mercado, text="📸 ÚLTIMA FOTO ESCANEADA (IA)", font=FONT_CARD, foreground=CLR_AMBER).pack(pady=(10, 4))
+        self.lbl_foto_mercado = tk.Label(self.panel_foto_mercado, bg="#000000", text="Sin escaneo reciente", fg=TEXT_MUTED)
+        self.lbl_foto_mercado.pack(padx=8, pady=6)
+        self.lbl_tag_mercado = ttk.Label(self.panel_foto_mercado, text="Estado: N/A", font=("Consolas", 10, "bold"), foreground=CLR_CYAN)
+        self.lbl_tag_mercado.pack(pady=4)
+
+        # ScrolledText (izq)
+        self.txt_mercado = scrolledtext.ScrolledText(f_mid_mercado, state='disabled', wrap=tk.WORD, font=("Segoe UI", 12), bg=BG_ENTRY, fg=TEXT_MAIN, height=12)
+        self.txt_mercado.pack(side=tk.LEFT, expand=True, fill='both')
+
+    def _actualizar_paneles_foto_escaneada(self, img_ann, symbol, conf_pct, modo_icon):
+        """Actualiza la imagen y etiqueta en el panel derecho de las pestañas Chat y Mercado."""
+        try:
+            h, w, _ = img_ann.shape
+            img_rgb = cv2.cvtColor(img_ann, cv2.COLOR_BGR2RGB)
+            img_pil = Image.fromarray(img_rgb)
+            img_pil.thumbnail((290, 210), Image.Resampling.LANCZOS)
+            tk_img = ImageTk.PhotoImage(img_pil)
+            self._foto_escaneada_tk = tk_img  # referencia viva
+
+            tag_str = f"🔍 {symbol} ({conf_pct:.0f}%) [{modo_icon}]"
+
+            if hasattr(self, 'lbl_foto_mercado') and self.lbl_foto_mercado.winfo_exists():
+                self.lbl_foto_mercado.configure(image=tk_img, text="")
+                self.lbl_tag_mercado.configure(text=tag_str, foreground=CLR_GREEN)
+
+            if hasattr(self, 'lbl_foto_chat') and self.lbl_foto_chat.winfo_exists():
+                self.lbl_foto_chat.configure(image=tk_img, text="")
+                self.lbl_tag_chat.configure(text=tag_str, foreground=CLR_GREEN)
+        except Exception as e:
+            print(f"[PANEL FOTO ERR] {e}")
+
 
     def consultar_mercado(self):
         ticker = self.entry_ticker.get().strip()
