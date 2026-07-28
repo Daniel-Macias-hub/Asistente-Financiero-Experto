@@ -460,6 +460,8 @@ class AsistenteApp:
             try:
                 self.root.after(0, lambda: lbl_status["TTS"].configure(text="⚙ Sintetizando voz...", foreground=CLR_CYAN))
                 from audio.tts import hablar
+                if esp32_comm.conectado:
+                    esp32_comm.ejecutar_test_audio()
                 hablar("Diagnóstico de sistema completado. Todos los componentes están operando correctamente.")
                 self.root.after(0, lambda: lbl_status["TTS"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
             except Exception:

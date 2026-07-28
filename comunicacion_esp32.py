@@ -295,7 +295,7 @@ class ComunicacionESP32:
                 self.serial_conn.flush()
 
                 inicio = time.time()
-                while time.time() - inicio < 10:
+                while time.time() - inicio < 16:
                     if self.cancelar_flag:
                         return None, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:

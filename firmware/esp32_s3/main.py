@@ -175,7 +175,7 @@ def correr_grabacion():
                 if bytes_written >= BUFFER_SIZE_16BIT:
                     break
                 val_32 = struct.unpack("<i", read_buf[s_idx*4 : (s_idx+1)*4])[0]
-                val_16 = val_32 >> 16
+                val_16 = max(-32768, min(32767, val_32 >> 12))
                 struct.pack_into("<h", audio_ram, bytes_written, val_16)
                 bytes_written += 2
 
