@@ -104,15 +104,40 @@ class PanelConsultas:
         self.procesar_respuesta(texto)
         
     def consultar_voz(self):
-        """Maneja consulta por voz (micrófono)."""
-        self.agregar_mensaje("Log", "Escuchando... Por favor, habla al micrófono.", "log")
-        self.root.update()
+        """Maneja consulta por voz usando el micrófono INMP441 si el ESP32 está conectado."""
+        from comunicacion_esp32 import esp32_comm
+        from audio.stt import escuchar_desde_pcm
         
-        def hilo_voz():
-            texto_reconocido = escuchar()
-            if "Error" in texto_reconocido:
-                self.agregar_mensaje("Log", texto_reconocido, "log")
-            else:
-                self.root.after(0, self.procesar_respuesta, texto_reconocido)
-                
-        threading.Thread(target=hilo_voz, daemon=True).start()
+        if esp32_comm.conectado:
+            self.agregar_mensaje("Log", "🎙️ Escuchando desde el micrófono INMP441 (4s)...", "log")
+            self.root.update()
+
+            def hilo_voz_esp():
+                esp32_comm.enviar_comando_oled("ESCUCHANDO")
+                metrics, res = esp32_comm.capturar_audio_mic(4)
+                esp32_comm.enviar_comando_oled("PROCESANDO")
+                if metrics and "pcm_bytes" in metrics:
+                    texto = escuchar_desde_pcm(metrics["pcm_bytes"])
+                    if texto and not texto.startswith("Error"):
+                        self.root.after(0, self.procesar_respuesta, texto)
+                    else:
+                        self.agregar_mensaje("Log", f"STT: {texto}", "log")
+                        esp32_comm.enviar_comando_oled("ERROR")
+                else:
+                    self.agregar_mensaje("Log", "No se recibió audio del micrófono INMP441.", "log")
+                    esp32_comm.enviar_comando_oled("ERROR")
+
+            threading.Thread(target=hilo_voz_esp, daemon=True).start()
+        else:
+            self.agregar_mensaje("Log", "Escuchando desde micrófono local de la PC...", "log")
+            self.root.update()
+
+            def hilo_voz_pc():
+                texto_reconocido = escuchar()
+                if "Error" in texto_reconocido:
+                    self.agregar_mensaje("Log", texto_reconocido, "log")
+                else:
+                    self.root.after(0, self.procesar_respuesta, texto_reconocido)
+
+            threading.Thread(target=hilo_voz_pc, daemon=True).start()
+

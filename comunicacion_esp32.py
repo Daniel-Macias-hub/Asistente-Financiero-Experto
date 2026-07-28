@@ -228,13 +228,12 @@ class ComunicacionESP32:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
                 import base64
-                chunk_size = 512
+                chunk_size = 1024
                 for idx in range(0, len(pcm_bytes), chunk_size):
                     chunk = pcm_bytes[idx : idx + chunk_size]
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
-                    time.sleep(0.015)
 
                 self.serial_conn.write(b"AUDIO_PLAY_END\n")
                 self.serial_conn.flush()
