@@ -197,7 +197,7 @@ class ComunicacionESP32:
                 return False, str(e)
 
     def reproducir_audio_bocina_pcm(self, pcm_bytes: bytes):
-        """Transmite bytes PCM al ESP32-S3 para reproducirlos en la bocina física MAX98357A."""
+        """Transmite bytes PCM codificados en Base64 al ESP32-S3 (evita caídas del REPL por control chars)."""
         if not self.conectado or not self.serial_conn or not pcm_bytes:
             return False, "ESP32 no conectado o sin audio"
 
@@ -227,20 +227,24 @@ class ComunicacionESP32:
                 if not ready:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
-                # Enviar datos PCM en bloques de 1 KB con pacing fluido para evitar distorsión en bocina
-                chunk_size = 1024
+                # Enviar bloques PCM codificados en Base64 (caracteres ASCII seguros)
+                import base64
+                chunk_size = 512
                 for idx in range(0, len(pcm_bytes), chunk_size):
                     chunk = pcm_bytes[idx : idx + chunk_size]
-                    self.serial_conn.write(chunk)
+                    b64_str = base64.b64encode(chunk).decode('utf-8')
+                    self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
                     time.sleep(0.008)
 
+                self.serial_conn.write(b"AUDIO_PLAY_END\n")
+                self.serial_conn.flush()
                 return True, "AUDIO_PLAY_OK"
             except Exception as e:
                 return False, str(e)
 
     def capturar_audio_mic(self, duracion_sec=4):
-        """Solicita al ESP32 grabar con INMP441 y enviar los bytes PCM por Serial."""
+        """Solicita al ESP32 grabar con INMP441 y recibir bloques Base64 por Serial."""
         if not self.conectado or not self.serial_conn:
             return None, "ESP32 no conectado"
 
@@ -269,18 +273,28 @@ class ComunicacionESP32:
                 if bytes_esperados <= 0:
                     return None, "No se recibió respuesta de audio"
 
+                import base64
                 pcm_data = bytearray()
-                while len(pcm_data) < bytes_esperados:
-                    chunk = self.serial_conn.read(bytes_esperados - len(pcm_data))
-                    if chunk:
-                        pcm_data.extend(chunk)
-                    else:
-                        break
+                t_mic = time.time()
+                while len(pcm_data) < bytes_esperados and (time.time() - t_mic < 8):
+                    if self.serial_conn.in_waiting > 0:
+                        raw_line = self.serial_conn.readline()
+                        linea = raw_line.decode('utf-8', errors='ignore').strip()
+                        if linea.startswith("MIC_CHUNK:"):
+                            b64_part = linea.split("MIC_CHUNK:")[1]
+                            try:
+                                raw_b = base64.b64decode(b64_part)
+                                pcm_data.extend(raw_b)
+                            except Exception:
+                                pass
+                        elif linea == "MIC_END":
+                            break
+                    time.sleep(0.01)
 
                 audio_np = np.frombuffer(pcm_data, dtype=np.int16)
                 max_peak = int(np.max(np.abs(audio_np))) if len(audio_np) > 0 else 0
 
-                # Aplicar amplificación digital (AGC) automática para que la voz grabada sea potente y clara
+                # Aplicar amplificación digital (AGC) automática
                 if len(audio_np) > 0 and max_peak > 0:
                     factor = min(8.0, 24000.0 / max(max_peak, 100))
                     audio_np = np.clip(audio_np.astype(np.float64) * factor, -32768, 32767).astype(np.int16)
@@ -299,6 +313,7 @@ class ComunicacionESP32:
                 return metrics, "MIC_TEST_OK"
             except Exception as e:
                 return None, str(e)
+
 
 
 # Instancia global

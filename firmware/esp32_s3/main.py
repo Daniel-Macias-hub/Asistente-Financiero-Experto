@@ -1,7 +1,8 @@
 # ==============================================================================
-# FIRMWARE ARQUITECTURA STREAMING ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
+# FIRMWARE DEFINITIVO BASE64 STREAMING ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
 # Memoria ultra-optimizada sin grandes búferes globales (Cero MemoryError)
-# Micrófono INMP441 (Ganancia 14-bit) + Bocina MAX98357A (Reloj Estéreo 64BCLK)
+# Protocolo de audio Base64 100% inmune a caídas del REPL por bytes de control
+# Micrófono INMP441 + Bocina MAX98357A + OLED SSD1306 + Control Serial UART
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -12,6 +13,7 @@ import sys
 import math
 import uselect  # pyrefly: ignore [missing-import] # type: ignore
 import gc
+import ubinascii # pyrefly: ignore [missing-import] # type: ignore
 
 def safe_flush():
     """Flush seguro de sys.stdout para compatibilidad con MicroPython."""
@@ -22,7 +24,7 @@ def safe_flush():
             pass
 
 # ------------------------------------------------------------------------------
-# Configuración de Pines Hardware (PCB MRD085A)
+# Configuración de Pines Hardware (PCB MRD085A / OKYN-G5806)
 # ------------------------------------------------------------------------------
 OLED_SDA = 41
 OLED_SCL = 42
@@ -71,7 +73,7 @@ except Exception:
     pass
 
 # ------------------------------------------------------------------------------
-# Canales Audio I2S (0 RX: Micrófono / 1 TX: Bocina MAX98357A en modo Estéreo)
+# Canales Audio I2S (0 RX: Micrófono / 1 TX: Bocina MAX98357A)
 # ------------------------------------------------------------------------------
 audio_in = None
 try:
@@ -92,7 +94,6 @@ except Exception as e_mic:
 
 audio_out = None
 try:
-    # MAX98357A requiere sincronismo de reloj estéreo (64 BCLK por trama WS)
     audio_out = I2S(
         1,
         sck=Pin(I2S_SPK_SCK),
@@ -171,7 +172,7 @@ def mostrar_idle():
     oled.show()
 
 # ------------------------------------------------------------------------------
-# Pruebas y Streaming de Audio de Alta Fidelidad (Sin distorsión)
+# Pruebas y Streaming de Audio Base64 (Sin interferencias de caracteres REPL)
 # ------------------------------------------------------------------------------
 def ejecutar_test_oled_secuencia():
     sys.stdout.write("[TEST] OLED Secuencia...\n")
@@ -205,8 +206,8 @@ def reproducir_tono_prueba_audio():
 
     gc.collect()
     freq = 440
-    amplitude = 3500  # Amplitud limpia para evitar recortes en la bocina
-    total_samples = SAMPLE_RATE  # 1 segundo = 16,000 muestras
+    amplitude = 3500
+    total_samples = SAMPLE_RATE
     samples_done = 0
     stereo_buf = bytearray(1024)
 
@@ -225,7 +226,7 @@ def reproducir_tono_prueba_audio():
     gc.collect()
 
 def reproducir_audio_pcm_stream(total_bytes):
-    """Recibe PCM por Serial, duplica muestras a estéreo y proyecta sonido nítido en MAX98357A."""
+    """Recibe bloques PCM codificados en Base64 por Serial y los reproduce en la bocina física."""
     if not audio_out or total_bytes <= 0:
         sys.stdout.write("AUDIO_PLAY_ERR\n")
         safe_flush()
@@ -236,44 +237,45 @@ def reproducir_audio_pcm_stream(total_bytes):
 
     gc.collect()
     bytes_read = 0
-    stdin_buf = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
-
-    in_buf = bytearray(512)
     out_buf = bytearray(1024)
 
     while bytes_read < total_bytes:
-        to_read = min(512, total_bytes - bytes_read)
-        num_r = stdin_buf.readinto(in_buf, to_read)
-        if num_r and num_r > 0:
-            num_samples = num_r // 2
-            for i in range(num_samples):
-                s = struct.unpack_from("<h", in_buf, i * 2)[0]
-                struct.pack_into("<hh", out_buf, i * 4, s, s)
-            audio_out.write(out_buf[:num_samples * 4])
-            bytes_read += num_r
-        else:
+        line = sys.stdin.readline().strip()
+        if not line:
+            continue
+        if line == "AUDIO_PLAY_END":
             break
+        try:
+            pcm_chunk = ubinascii.a2b_base64(line)
+            num_samples = len(pcm_chunk) // 2
+            if num_samples > 0:
+                for i in range(num_samples):
+                    s = struct.unpack_from("<h", pcm_chunk, i * 2)[0]
+                    struct.pack_into("<hh", out_buf, i * 4, s, s)
+                audio_out.write(out_buf[:num_samples * 4])
+                bytes_read += len(pcm_chunk)
+        except Exception as e_b64:
+            sys.stdout.write(f"[AUDIO_PLAY B64 ERR] {e_b64}\n")
+            safe_flush()
 
     sys.stdout.write("AUDIO_PLAY_OK\n")
     safe_flush()
     gc.collect()
 
 def grabar_y_transmitir_mic():
-    """Lee el mic INMP441 con desplazamiento de 14 bits (alta nitidez) y transmite por Serial."""
+    """Lee el mic INMP441 y transmite bloques de audio PCM codificados en Base64 por Serial."""
     if not audio_in:
         sys.stdout.write("MIC_DATA:0\n")
         safe_flush()
         return
 
     gc.collect()
-    # Limpiar muestras residuales del búfer I2S
     for _ in range(3):
         audio_in.readinto(READ_BUF)
 
     sys.stdout.write(f"MIC_DATA:{TOTAL_BYTES_RECORD}\n")
     safe_flush()
 
-    out_stream = sys.stdout.buffer if hasattr(sys.stdout, 'buffer') else sys.stdout
     bytes_written = 0
 
     while bytes_written < TOTAL_BYTES_RECORD:
@@ -285,22 +287,23 @@ def grabar_y_transmitir_mic():
                 if bytes_written + (out_idx * 2) >= TOTAL_BYTES_RECORD:
                     break
                 val_32 = struct.unpack_from("<i", READ_BUF, s_idx * 4)[0]
-                # Desplazamiento de 14 bits: conserva 16 bits completos del INMP441
                 val_16 = max(-32768, min(32767, val_32 >> 14))
                 struct.pack_into("<h", CONV_BUF, out_idx * 2, val_16)
                 out_idx += 1
 
             if out_idx > 0:
                 bytes_to_send = out_idx * 2
-                out_stream.write(CONV_BUF[:bytes_to_send])
+                b64_chunk = ubinascii.b2a_base64(CONV_BUF[:bytes_to_send]).decode('utf-8').strip()
+                sys.stdout.write(f"MIC_CHUNK:{b64_chunk}\n")
                 safe_flush()
                 bytes_written += bytes_to_send
 
+    sys.stdout.write("MIC_END\n")
     safe_flush()
     gc.collect()
 
 # ------------------------------------------------------------------------------
-# Bucle Principal de Control Serial (Polling no bloqueante)
+# Bucle Principal de Control Serial
 # ------------------------------------------------------------------------------
 def main():
     poll_obj = uselect.poll()
