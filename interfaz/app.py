@@ -20,7 +20,7 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 from experto.motor import procesar_consulta
-from experto.finanzas_tiempo_real import obtener_datos_accion, generar_respuesta_precio
+from experto.finanzas_tiempo_real import obtener_datos_accion, generar_respuesta_precio, generar_sintesis_hablada
 from entrenamiento.agregar_concepto import nuevo_concepto
 from entrenamiento.agregar_relacion import nueva_relacion
 from entrenamiento.agregar_regla import nueva_regla
@@ -195,7 +195,7 @@ class AsistenteApp:
         self.btn_flash = ttk.Button(f_btns_cam, text="💡 Flash: OFF", command=self.toggle_flash_led)
         self.btn_flash.pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_cam, text="🔍 Agrandar (HD)", command=self.abrir_visor_agrandado).pack(side=tk.LEFT, padx=2)
-        ttk.Button(f_btns_cam, text="📸 Escanear Cripto", command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=2)
+
 
         # --- Panel Derecho: Visor de Cámara Embebido en Canvas ---
         c_visor = ttk.Frame(pan_top, style="Card.TFrame")
@@ -484,7 +484,7 @@ class AsistenteApp:
             font=FONT_SUB, foreground=CLR_GREEN
         ).pack(side=tk.TOP, pady=(6, 2))
 
-        # ── Barra de Control (5 botones) ───────────────────────────────────────────────
+        # ── Barra de Control (4 botones) ───────────────────────────────────────────────
         f_hd_ctrl = ttk.Frame(self.window_agrandar, style="Card.TFrame")
         f_hd_ctrl.pack(side=tk.TOP, fill='x', padx=10, pady=4)
 
@@ -494,10 +494,9 @@ class AsistenteApp:
                    command=self.toggle_video_stream).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="⚡ Flash ON/OFF",
                    command=self.toggle_flash_led).pack(side=tk.LEFT, padx=6)
-        ttk.Button(f_hd_ctrl, text="📷 Escanear Cripto",
-                   command=self.escanear_cripto_pipeline).pack(side=tk.LEFT, padx=6)
         ttk.Button(f_hd_ctrl, text="❌ Cerrar",
                    command=self.window_agrandar.destroy).pack(side=tk.RIGHT, padx=6)
+
 
         # ── Área principal (stream + panel foto lado a lado) ───────────────────────────────
         self.frame_hd_principal = ttk.Frame(self.window_agrandar, style="TFrame")
@@ -568,9 +567,14 @@ class AsistenteApp:
                     command=lambda: self._guardar_foto_png(self.ultimo_frame_cv2)
                 ).pack(fill='x', pady=2)
                 ttk.Button(
+                    f_foto_btns, text="📷 Escanear Cripto",
+                    command=self.escanear_cripto_pipeline
+                ).pack(fill='x', pady=2)
+                ttk.Button(
                     f_foto_btns, text="✖ Cerrar Panel Foto",
                     command=self._cerrar_panel_foto
                 ).pack(fill='x', pady=2)
+
 
 
             # Actualizar imagen en el panel (escalar a 320x220)
@@ -855,8 +859,10 @@ class AsistenteApp:
                     )
 
                 self.root.after(0, _update_ui)
-                hablar(f"Criptomoneda identificada: {nombre_display}. {resp.splitlines()[0] if resp else ''}")
+                sintesis = generar_sintesis_hablada(symbol)
+                hablar(sintesis)
                 esp32_comm.enviar_comando_oled("IDLE")
+
 
             else:
                 esp32_comm.enviar_comando_oled("ERROR")

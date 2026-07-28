@@ -83,6 +83,12 @@ def obtener_datos_accion(ticker: str) -> dict:
     """
     ticker_clean = ticker.strip().upper()
     info_extra = CRYPTO_DETAILS.get(ticker_clean, {})
+    if not info_extra:
+        for k, v in CRYPTO_DETAILS.items():
+            if v.get("simbolo") == ticker_clean or k == ticker_clean:
+                info_extra = v
+                break
+
 
     # 1. Si es Criptomoneda, consultar CoinGecko primero
     try:
@@ -145,6 +151,32 @@ def obtener_datos_accion(ticker: str) -> dict:
         "resumen": info_extra.get("descripcion", "Criptoactivo verificado.")
     }
 
+def generar_sintesis_hablada(ticker: str) -> str:
+    """
+    Genera un texto conversacional fluido y didáctico para la síntesis de voz (TTS),
+    explicando precio USD/MXN, año de creación, dónde comprar y resumen.
+    """
+    datos = obtener_datos_accion(ticker)
+    if not datos:
+        return f"No se encontraron datos para {ticker}."
+    
+    nombre = datos.get("nombre", ticker)
+    p_usd = datos.get("precio", 0.0)
+    p_mxn = datos.get("precio_mxn", 0.0)
+    anio = datos.get("anio_creacion", "")
+    p_ini = datos.get("precio_inicial", "")
+    exchanges = datos.get("exchanges", "")
+    resumen = datos.get("resumen", "")
+
+    sintesis = (
+        f"Criptomoneda identificada: {nombre}. "
+        f"Su precio actual es de {p_usd:,.2f} dólares, equivalentes a {p_mxn:,.2f} pesos mexicanos. "
+        f"Origen y año de creación: {anio}. Su precio inicial histórico fue {p_ini}. "
+        f"Puedes adquirirla en plataformas como {exchanges}. "
+        f"En resumen: {resumen}"
+    )
+    return sintesis
+
 def generar_respuesta_precio(ticker: str) -> tuple[str, list]:
     datos = obtener_datos_accion(ticker)
     logs = [f"Consulta realizada para {ticker}"]
@@ -169,3 +201,4 @@ def generar_respuesta_precio(ticker: str) -> tuple[str, list]:
         return res, logs
     else:
         return f"Lo siento, no pude obtener los datos de mercado para '{ticker}'.", logs
+
