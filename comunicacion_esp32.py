@@ -227,8 +227,14 @@ class ComunicacionESP32:
                 if not ready:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
-                self.serial_conn.write(pcm_bytes)
-                self.serial_conn.flush()
+                # Enviar datos PCM en bloques de 1 KB con pacing fluido para evitar distorsión en bocina
+                chunk_size = 1024
+                for idx in range(0, len(pcm_bytes), chunk_size):
+                    chunk = pcm_bytes[idx : idx + chunk_size]
+                    self.serial_conn.write(chunk)
+                    self.serial_conn.flush()
+                    time.sleep(0.008)
+
                 return True, "AUDIO_PLAY_OK"
             except Exception as e:
                 return False, str(e)
@@ -272,8 +278,16 @@ class ComunicacionESP32:
                         break
 
                 audio_np = np.frombuffer(pcm_data, dtype=np.int16)
-                rms = float(np.sqrt(np.mean(audio_np.astype(np.float64)**2))) if len(audio_np) > 0 else 0.0
                 max_peak = int(np.max(np.abs(audio_np))) if len(audio_np) > 0 else 0
+
+                # Aplicar amplificación digital (AGC) automática para que la voz grabada sea potente y clara
+                if len(audio_np) > 0 and max_peak > 0:
+                    factor = min(8.0, 24000.0 / max(max_peak, 100))
+                    audio_np = np.clip(audio_np.astype(np.float64) * factor, -32768, 32767).astype(np.int16)
+                    pcm_data = audio_np.tobytes()
+                    max_peak = int(np.max(np.abs(audio_np)))
+
+                rms = float(np.sqrt(np.mean(audio_np.astype(np.float64)**2))) if len(audio_np) > 0 else 0.0
 
                 metrics = {
                     "duracion": len(audio_np) / 16000.0,
@@ -285,6 +299,7 @@ class ComunicacionESP32:
                 return metrics, "MIC_TEST_OK"
             except Exception as e:
                 return None, str(e)
+
 
 # Instancia global
 esp32_comm = ComunicacionESP32()
