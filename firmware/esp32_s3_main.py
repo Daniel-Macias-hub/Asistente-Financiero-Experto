@@ -1,5 +1,5 @@
 # ==============================================================================
-# FIRMWARE ESP32-S3 DEFINITIVO (CON PAUSA DMA COMPLETA EN BARRIDO I2S)
+# FIRMWARE ESP32-S3 DEFINITIVO (SOPORTE STREAMING DE VOZ IA A BOCINA MAX98357A)
 # Hardware: PCB MRD085A / Kit OKYN-G5806 (ESP32-S3 N16R8)
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
@@ -9,6 +9,7 @@ import time
 import struct
 import sys
 import math
+import ubinascii  # pyrefly: ignore [missing-import] # type: ignore
 
 def safe_flush():
     """Flush seguro de sys.stdout para compatibilidad con MicroPython."""
@@ -131,7 +132,6 @@ def reproducir_tono_audio():
     bytes_sent = audio_out.write(tone_buf)
     sys.stdout.write(f"[STEP 8] Tono audio_out.write terminado: bytes_sent={bytes_sent}\n")
     safe_flush()
-    # Esperar 1.0s a que el DMA termine la emisión
     time.sleep(1.0)
 
 def correr_grabacion():
@@ -228,7 +228,6 @@ def correr_reproduccion():
     bytes_sent = audio_out.write(audio_ram)
     sys.stdout.write(f"[STEP 8] audio_out.write terminado: bytes_sent={bytes_sent}\n")
     safe_flush()
-    # Pausa de 3.0s para permitir que el DMA I2S complete la emisión de los 3s de voz grabada
     time.sleep(3.0)
 
     sys.stdout.write("[STEP 9] Saliendo correr_reproduccion\n")
@@ -243,9 +242,9 @@ def mostrar_idle():
     oled.show()
 
 # ==============================================================================
-# BUCLE PRINCIPAL CON TRAZABILIDAD OBLIGATORIA
+# BUCLE PRINCIPAL (Disparado únicamente por comandos UART)
 # ==============================================================================
-sys.stdout.write("[ESP32-S3] READY (DMA Audio Sync Fix)\n")
+sys.stdout.write("[ESP32-S3] READY (Soporte Streaming Audio IA a Bocina)\n")
 safe_flush()
 
 while True:
@@ -297,6 +296,41 @@ while True:
             except Exception as ex_mic:
                 sys.stdout.write(f"MIC_TEST_FAIL: {ex_mic}\n")
                 safe_flush()
+        elif cmd.startswith("AUDIO_PLAY:"):
+            partes = cmd.split(":")
+            total_bytes = int(partes[1]) if len(partes) >= 2 else 0
+            if oled:
+                oled.fill(0)
+                oled.rect(0, 0, 128, 64, 1)
+                oled.text("🔊 RESPONDIENDO", 8, 20, 1)
+                oled.text("Voz IA en bocina", 4, 38, 1)
+                oled.show()
+
+            sys.stdout.write("AUDIO_PLAY_READY\n")
+            safe_flush()
+
+            bytes_rec = 0
+            while bytes_rec < total_bytes:
+                line_b64 = sys.stdin.readline()
+                if not line_b64:
+                    continue
+                str_b64 = line_b64.strip()
+                if str_b64 == "STOP":
+                    break
+                try:
+                    chunk = ubinascii.a2b_base64(str_b64)
+                    if audio_out:
+                        audio_out.write(chunk)
+                    bytes_rec += len(chunk)
+                except Exception as ex_b64:
+                    sys.stdout.write(f"[AUDIO_PLAY ERR] {ex_b64}\n")
+                    safe_flush()
+
+            time.sleep(0.4)
+            mostrar_idle()
+            sys.stdout.write("AUDIO_PLAY_OK\n")
+            safe_flush()
+
     except Exception as err:
         sys.stdout.write(f"[MAIN ERR] {err}\n")
         safe_flush()
