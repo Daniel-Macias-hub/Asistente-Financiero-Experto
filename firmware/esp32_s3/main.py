@@ -1,8 +1,7 @@
 # ==============================================================================
-# FIRMWARE DEFINITIVO BASE64 STREAMING ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
-# Memoria ultra-optimizada sin grandes búferes globales (Cero MemoryError)
-# Eco local instantáneo de alta fidelidad + Control de cancelación STOP
-# Micrófono INMP441 + Bocina MAX98357A + OLED SSD1306 + Control Serial UART
+# FIRMWARE DEFINITIVO ESP32-S3 (BASADO 100% EN test_grabadora.py)
+# Hardware: PCB MRD085A / Kit OKYN-G5806 (ESP32-S3 N16R8)
+# UART ligera sólo para comandos cortos. Cero envío de audio pesado por Serie.
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -13,7 +12,6 @@ import sys
 import math
 import uselect  # pyrefly: ignore [missing-import] # type: ignore
 import gc
-import ubinascii # pyrefly: ignore [missing-import] # type: ignore
 
 def safe_flush():
     """Flush seguro de sys.stdout para compatibilidad con MicroPython."""
@@ -23,47 +21,41 @@ def safe_flush():
         except Exception:
             pass
 
-# ------------------------------------------------------------------------------
-# Configuración de Pines Hardware (PCB MRD085A / OKYN-G5806)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# CONFIGURACIÓN DE PINES (PCB MRD085A)
+# ==============================================================================
 OLED_SDA = 41
 OLED_SCL = 42
 
-I2S_MIC_SCK = 5
-I2S_MIC_WS  = 4
-I2S_MIC_SD  = 6
-
 I2S_SPK_SCK = 15
-I2S_SPK_WS  = 16
-I2S_SPK_SD  = 7
+I2S_SPK_WS = 16
+I2S_SPK_SD = 7
+
+I2S_MIC_SCK = 5
+I2S_MIC_WS = 4
+I2S_MIC_SD = 6
 
 SAMPLE_RATE = 16000
 RECORD_SECS = 3
-TOTAL_BYTES_RECORD = SAMPLE_RATE * 2 * RECORD_SECS  # 96,000 bytes para 3s
+BUFFER_SIZE_16BIT = SAMPLE_RATE * 2 * RECORD_SECS  # 96,000 bytes
 
-# Búferes estáticos en RAM
-gc.collect()
-READ_BUF = bytearray(512)       # Recibe muestras 32-bit I2S del mic INMP441
-CONV_BUF = bytearray(256)       # Almacena muestras 16-bit PCM para streaming PC
-AUDIO_RAM = bytearray(TOTAL_BYTES_RECORD) # 96 KB buffer RAM para eco directo cristalino
-
-# Verificación explícita de memoria libre
-mem_free_boot = gc.mem_free()
-sys.stdout.write(f"[FIRMWARE] RAM Libre al inicio: {mem_free_boot} bytes\n")
-safe_flush()
-
-# ------------------------------------------------------------------------------
-# Inicialización Pantalla OLED SSD1306
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# INICIALIZACIÓN DE LA PANTALLA OLED
+# ==============================================================================
 oled = None
 try:
     i2c = machine.SoftI2C(scl=Pin(OLED_SCL), sda=Pin(OLED_SDA))
     oled = ssd1306.SSD1306_I2C(128, 64, i2c)
-except Exception as e_oled:
-    sys.stdout.write(f"[OLED ERR] {e_oled}\n")
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("ASISTENTE FIN.", 8, 15, 1)
+    oled.text("Listo en PC", 18, 35, 1)
+    oled.show()
+except Exception as e:
+    sys.stdout.write(f"[OLED ERR] {e}\n")
     safe_flush()
 
-# Desactivar NeoPixels para ahorrar energía
+# Apagar LED blanco Neopixel
 try:
     import neopixel  # pyrefly: ignore [missing-import] # type: ignore
     for p in [48, 38, 8]:
@@ -73,9 +65,9 @@ try:
 except Exception:
     pass
 
-# ------------------------------------------------------------------------------
-# Canales Audio I2S (0 RX: Micrófono / 1 TX: Bocina MAX98357A)
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# INICIALIZACIÓN ÚNICA DE PUERTOS I2S (Idéntica a test_grabadora.py)
+# ==============================================================================
 audio_in = None
 try:
     audio_in = I2S(
@@ -87,10 +79,10 @@ try:
         bits=32,
         format=I2S.MONO,
         rate=SAMPLE_RATE,
-        ibuf=2048
+        ibuf=1024
     )
-except Exception as e_mic:
-    sys.stdout.write(f"[MIC ERR] {e_mic}\n")
+except Exception as e:
+    sys.stdout.write(f"[MIC ERR] {e}\n")
     safe_flush()
 
 audio_out = None
@@ -102,253 +94,111 @@ try:
         sd=Pin(I2S_SPK_SD),
         mode=I2S.TX,
         bits=16,
-        format=I2S.STEREO,
+        format=I2S.MONO,
         rate=SAMPLE_RATE,
-        ibuf=2048
+        ibuf=1024
     )
-except Exception as e_spk:
-    sys.stdout.write(f"[SPK ERR] {e_spk}\n")
+except Exception as e:
+    sys.stdout.write(f"[SPK ERR] {e}\n")
     safe_flush()
 
-# ------------------------------------------------------------------------------
-# Animaciones OLED SSD1306
-# ------------------------------------------------------------------------------
-def animacion_osciloscopio(titulo, frame, amplitud=14, frec=0.18):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text(titulo, 8, 6, 1)
-    for x in range(4, 124, 8):
-        oled.pixel(x, 40, 1)
-    prev_x = 4
-    prev_y = 40 + int(amplitud * math.sin((4 + frame * 6) * frec))
-    for x in range(6, 124, 3):
-        y = 40 + int(amplitud * math.sin((x + frame * 6) * frec) * math.cos(x * 0.04))
-        oled.line(prev_x, prev_y, x, y, 1)
-        prev_x, prev_y = x, y
-    oled.show()
+# BÚFER Y LÓGICA DE GRABACIÓN Y REPRODUCCIÓN LOCAL
+audio_ram = bytearray(BUFFER_SIZE_16BIT)
+read_buf = bytearray(512)
 
-def animacion_iniciando(paso):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text("INICIANDO...", 18, 15, 1)
-    ancho = ((paso % 10) + 1) * 10
-    oled.rect(14, 38, 100, 10, 1)
-    oled.fill_rect(14, 38, ancho, 10, 1)
-    oled.show()
+def correr_grabacion():
+    """Ejecuta exactamente la lógica validada de test_grabadora.py."""
+    for i in range(len(audio_ram)):
+        audio_ram[i] = 0
 
-def animacion_escuchando(frame):
-    animacion_osciloscopio("🔴 ESCUCHANDO", frame, amplitud=16, frec=0.20)
+    if oled:
+        oled.fill(0)
+        oled.rect(0, 0, 128, 64, 1)
+        oled.text(" 🔴 GRABANDO ", 15, 15, 1)
+        oled.text("Habla ahora!", 16, 38, 1)
+        oled.show()
 
-def animacion_procesando(frame):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text("⚙ PROCESANDO", 12, 12, 1)
-    dots = "." * ((frame % 4) + 1)
-    oled.text(f"Pensando{dots}", 18, 30, 1)
-    animacion_osciloscopio("⚙ PROCESANDO", frame, amplitud=6, frec=0.10)
+    # Vaciar lecturas basura acumuladas antes de empezar
+    temp = bytearray(256)
+    if audio_in:
+        for _ in range(5):
+            audio_in.readinto(temp)
 
-def animacion_respondiendo(frame):
-    animacion_osciloscopio("🔊 RESPONDIENDO", frame, amplitud=20, frec=0.28)
+    bytes_written = 0
+    while bytes_written < BUFFER_SIZE_16BIT:
+        if audio_in:
+            num_read = audio_in.readinto(read_buf)
+            if num_read > 0:
+                num_samples = num_read // 4
+                for s_idx in range(num_samples):
+                    if bytes_written >= BUFFER_SIZE_16BIT:
+                        break
+                    val_32 = struct.unpack("<i", read_buf[s_idx*4 : (s_idx+1)*4])[0]
+                    val_16 = val_32 >> 16
+                    struct.pack_into("<h", audio_ram, bytes_written, val_16)
+                    bytes_written += 2
 
-def animacion_error(mensaje="ERR SISTEMA"):
-    if not oled: return
-    oled.fill(0)
-    oled.rect(0, 0, 128, 64, 1)
-    oled.text("❌ ERROR", 30, 15, 1)
-    oled.text(mensaje[:14], 8, 38, 1)
-    oled.show()
+def correr_reproduccion():
+    """Ejecuta exactamente la lógica validada de test_grabadora.py."""
+    if oled:
+        oled.fill(0)
+        oled.rect(0, 0, 128, 64, 1)
+        oled.text(" 🟢 REPRODUCIENDO ", 4, 15, 1)
+        oled.text("Escucha la bocina", 4, 38, 1)
+        oled.show()
+
+    if audio_out:
+        audio_out.write(audio_ram)
+        time.sleep(0.1)
+
+def reproducir_tono_audio():
+    """Reproduce tono de prueba 440 Hz en MAX98357A."""
+    if not audio_out: return
+    freq = 440
+    amplitude = 12000
+    tone_buf = bytearray(1024)
+    for i in range(512):
+        s = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
+        struct.pack_into("<h", tone_buf, i * 2, s)
+    for _ in range(30):
+        audio_out.write(tone_buf)
+    time.sleep(0.1)
 
 def mostrar_idle():
     if not oled: return
     oled.fill(0)
     oled.rect(0, 0, 128, 64, 1)
     oled.text("ASISTENTE FIN.", 8, 15, 1)
-    oled.text("Listo en PC", 18, 32, 1)
-    for x in range(10, 118, 4):
-        y = 52 + int(3 * math.sin(x * 0.1))
-        oled.pixel(x, y, 1)
+    oled.text("Listo en PC", 18, 35, 1)
     oled.show()
 
-# ------------------------------------------------------------------------------
-# Pruebas y Streaming de Audio Base64 (Sin interferencias de caracteres REPL)
-# ------------------------------------------------------------------------------
-def ejecutar_test_oled_secuencia():
-    sys.stdout.write("[TEST] OLED Secuencia...\n")
-    safe_flush()
-    estados = [
-        ("INICIANDO", animacion_iniciando),
-        ("ESCUCHANDO", animacion_escuchando),
-        ("PROCESANDO", animacion_procesando),
-        ("RESPONDIENDO", animacion_respondiendo),
-        ("LISTO", lambda p: animacion_osciloscopio("✓ OLED OK", p, amplitud=12))
-    ]
-    for _, func in estados:
-        t_start = time.time()
-        f = 0
-        while time.time() - t_start < 0.8:
-            func(f)
-            f += 1
-            time.sleep(0.04)
-    mostrar_idle()
-    sys.stdout.write("OLED_TEST_OK\n")
-    safe_flush()
+def animacion_escuchando():
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("🔴 ESCUCHANDO", 12, 20, 1)
+    oled.show()
 
-def reproducir_tono_prueba_audio():
-    """Genera tono senoidal nítido de 440 Hz en bloques estéreo de 1024B para la bocina MAX98357A."""
-    sys.stdout.write("[TEST] Tono de prueba 440 Hz en streaming...\n")
-    safe_flush()
-    if not audio_out:
-        sys.stdout.write("AUDIO_TEST_ERR\n")
-        safe_flush()
-        return
+def animacion_procesando():
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("⚙ PROCESANDO", 12, 20, 1)
+    oled.show()
 
-    gc.collect()
-    freq = 440
-    amplitude = 3500
-    total_samples = SAMPLE_RATE
-    samples_done = 0
-    stereo_buf = bytearray(1024)
+def animacion_respondiendo():
+    if not oled: return
+    oled.fill(0)
+    oled.rect(0, 0, 128, 64, 1)
+    oled.text("🔊 RESPONDIENDO", 8, 20, 1)
+    oled.show()
 
-    while samples_done < total_samples:
-        to_gen = min(256, total_samples - samples_done)
-        for i in range(to_gen):
-            s_idx = samples_done + i
-            sample = int(amplitude * math.sin(2 * math.pi * freq * (s_idx / SAMPLE_RATE)))
-            struct.pack_into("<hh", stereo_buf, i * 4, sample, sample)
-        audio_out.write(stereo_buf[:to_gen * 4])
-        samples_done += to_gen
-
-    time.sleep(0.1)
-    sys.stdout.write("AUDIO_TEST_OK\n")
-    safe_flush()
-    gc.collect()
-
-def reproducir_audio_pcm_stream(total_bytes):
-    """Recibe bloques PCM codificados en Base64 por Serial y los reproduce en la bocina física."""
-    if not audio_out or total_bytes <= 0:
-        sys.stdout.write("AUDIO_PLAY_ERR\n")
-        safe_flush()
-        return
-
-    sys.stdout.write(f"AUDIO_PLAY_READY:{total_bytes}\n")
-    safe_flush()
-
-    gc.collect()
-    bytes_read = 0
-    out_buf = bytearray(1024)
-    poll_in = uselect.poll()
-    poll_in.register(sys.stdin, uselect.POLLIN)
-
-    while bytes_read < total_bytes:
-        events = poll_in.poll(100)
-        if not events:
-            continue
-        line = sys.stdin.readline().strip()
-        if not line:
-            continue
-        if line in ("STOP", "AUDIO_PLAY_END"):
-            break
-        try:
-            pcm_chunk = ubinascii.a2b_base64(line)
-            num_samples = len(pcm_chunk) // 2
-            if num_samples > 0:
-                for i in range(num_samples):
-                    s = struct.unpack_from("<h", pcm_chunk, i * 2)[0]
-                    struct.pack_into("<hh", out_buf, i * 4, s, s)
-                audio_out.write(out_buf[:num_samples * 4])
-                bytes_read += len(pcm_chunk)
-        except Exception as e_b64:
-            sys.stdout.write(f"[AUDIO_PLAY B64 ERR] {e_b64}\n")
-            safe_flush()
-
-    sys.stdout.write("AUDIO_PLAY_OK\n")
-    safe_flush()
-    gc.collect()
-
-def grabar_y_transmitir_mic():
-    """Graba mic INMP441 a RAM, hace ECO LOCAL INSTANTO a la bocina (100% nítido) y transmite a PC."""
-    if not audio_in:
-        sys.stdout.write("MIC_DATA:0\n")
-        safe_flush()
-        return
-
-    gc.collect()
-    # 1. Vaciar lecturas basuras del búfer I2S
-    for _ in range(5):
-        audio_in.readinto(READ_BUF)
-
-    if oled:
-        oled.fill(0)
-        oled.rect(0, 0, 128, 64, 1)
-        oled.text("🔴 GRABANDO", 16, 20, 1)
-        oled.text("Habla 3 seg...", 12, 40, 1)
-        oled.show()
-
-    # 2. Grabar 3 segundos a AUDIO_RAM
-    bytes_recorded = 0
-    while bytes_recorded < TOTAL_BYTES_RECORD:
-        num_read = audio_in.readinto(READ_BUF)
-        if num_read > 0:
-            num_samples = num_read // 4
-            for s_idx in range(num_samples):
-                if bytes_recorded >= TOTAL_BYTES_RECORD:
-                    break
-                val_32 = struct.unpack_from("<i", READ_BUF, s_idx * 4)[0]
-                val_16 = max(-32768, min(32767, val_32 >> 14))
-                struct.pack_into("<h", AUDIO_RAM, bytes_recorded, val_16)
-                bytes_recorded += 2
-
-    # 3. Reproducción LOCAL INSTANTÁNEA en la bocina MAX98357A (Idéntica a test_grabadora.py)
-    if audio_out:
-        if oled:
-            oled.fill(0)
-            oled.rect(0, 0, 128, 64, 1)
-            oled.text("🔊 REPRODUCIENDO", 4, 20, 1)
-            oled.text("Escucha bocina...", 6, 40, 1)
-            oled.show()
-        
-        # Enviar muestras mono a estéreo en bloques estáticos
-        stereo_buf = bytearray(1024)
-        num_tot_samples = bytes_recorded // 2
-        s_pos = 0
-        while s_pos < num_tot_samples:
-            to_send = min(256, num_tot_samples - s_pos)
-            for i in range(to_send):
-                s = struct.unpack_from("<h", AUDIO_RAM, (s_pos + i) * 2)[0]
-                struct.pack_into("<hh", stereo_buf, i * 4, s, s)
-            audio_out.write(stereo_buf[:to_send * 4])
-            s_pos += to_send
-        time.sleep(0.1)
-
-    mostrar_idle()
-
-    # 4. Transmitir audio grabado a la PC en bloques Base64
-    sys.stdout.write(f"MIC_DATA:{bytes_recorded}\n")
-    safe_flush()
-
-    chunk_size = 512
-    for idx in range(0, bytes_recorded, chunk_size):
-        chunk = AUDIO_RAM[idx : idx + chunk_size]
-        b64_chunk = ubinascii.b2a_base64(chunk).decode('utf-8').strip()
-        sys.stdout.write(f"MIC_CHUNK:{b64_chunk}\n")
-        safe_flush()
-
-    sys.stdout.write("MIC_END\n")
-    safe_flush()
-    gc.collect()
-
-# ------------------------------------------------------------------------------
-# Bucle Principal de Control Serial
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# BUCLE PRINCIPAL (Disparado únicamente por comandos UART cortos)
+# ==============================================================================
 def main():
     poll_obj = uselect.poll()
     poll_obj.register(sys.stdin, uselect.POLLIN)
-
-    estado_actual = "IDLE"
-    frame_counter = 0
     mostrar_idle()
 
     gc.collect()
@@ -364,53 +214,48 @@ def main():
                     if not linea:
                         continue
 
-                    if linea == "STOP":
-                        estado_actual = "IDLE"
-                        mostrar_idle()
-                        sys.stdout.write("STOP_ACK\n")
-                        safe_flush()
-                    elif linea == "PING":
+                    if linea == "PING":
                         sys.stdout.write("PONG\n")
                         safe_flush()
                     elif linea == "OLED_TEST":
-                        ejecutar_test_oled_secuencia()
+                        if oled:
+                            oled.fill(0)
+                            oled.rect(0, 0, 128, 64, 1)
+                            oled.text("✓ OLED OK", 28, 25, 1)
+                            oled.show()
+                            time.sleep(1)
+                            mostrar_idle()
+                        sys.stdout.write("OLED_TEST_OK\n")
+                        safe_flush()
                     elif linea == "AUDIO_TEST":
-                        reproducir_tono_prueba_audio()
-                    elif linea == "MIC_START":
-                        grabar_y_transmitir_mic()
-                    elif linea.startswith("AUDIO_PLAY:"):
-                        try:
-                            n_b = int(linea.split(":")[1])
-                            reproducir_audio_pcm_stream(n_b)
-                        except Exception as ex_p:
-                            sys.stdout.write(f"AUDIO_PLAY_ERR:{ex_p}\n")
-                            safe_flush()
+                        reproducir_tono_audio()
+                        mostrar_idle()
+                        sys.stdout.write("AUDIO_TEST_OK\n")
+                        safe_flush()
+                    elif linea in ("MIC_START", "MIC_TEST"):
+                        correr_grabacion()
+                        correr_reproduccion()
+                        mostrar_idle()
+                        sys.stdout.write("MIC_TEST_OK\n")
+                        safe_flush()
                     elif linea.startswith("STATE:"):
                         partes = linea.split(":")
-                        if len(partes) >= 2:
-                            estado_actual = partes[1].upper()
-                            sys.stdout.write(f"STATE_ACK:{estado_actual}\n")
-                            safe_flush()
+                        st = partes[1].upper() if len(partes) >= 2 else "IDLE"
+                        if st == "ESCUCHANDO":
+                            animacion_escuchando()
+                        elif st == "PROCESANDO":
+                            animacion_procesando()
+                        elif st == "RESPONDIENDO":
+                            animacion_respondiendo()
+                        else:
+                            mostrar_idle()
+                        sys.stdout.write(f"STATE_ACK:{st}\n")
+                        safe_flush()
 
-            frame_counter += 1
-            if estado_actual == "INICIANDO":
-                animacion_iniciando(frame_counter)
-            elif estado_actual == "ESCUCHANDO":
-                animacion_escuchando(frame_counter)
-            elif estado_actual == "PROCESANDO":
-                animacion_procesando(frame_counter)
-            elif estado_actual == "RESPONDIENDO":
-                animacion_respondiendo(frame_counter)
-            elif estado_actual == "ERROR":
-                animacion_error("FALLO SISTEMA")
-            else:
-                mostrar_idle()
-
-            time.sleep(0.04)
+            time.sleep(0.02)
         except Exception as err:
             sys.stdout.write(f"[MAIN ERR] {err}\n")
             safe_flush()
-            time.sleep(0.2)
 
 if __name__ == "__main__":
     main()
