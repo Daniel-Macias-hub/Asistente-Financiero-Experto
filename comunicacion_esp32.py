@@ -17,6 +17,24 @@ class ComunicacionESP32:
         self.conectado = False
         self.callback_log = None
         self.lock = threading.Lock()
+        self.cancelar_flag = False
+
+    def detener_operacion(self):
+        """Detiene de inmediato cualquier transferencia de audio o prueba en curso."""
+        self.cancelar_flag = True
+        try:
+            if self.serial_conn and self.serial_conn.is_open:
+                self.serial_conn.write(b"STOP\nSTATE:IDLE:\n")
+                self.serial_conn.flush()
+                time.sleep(0.1)
+                self.serial_conn.reset_input_buffer()
+                self.serial_conn.reset_output_buffer()
+                if self.callback_log:
+                    self.callback_log("[SISTEMA] 🛑 PRUEBA CANCELADA POR EL USUARIO.")
+        except Exception as e:
+            if self.callback_log:
+                self.callback_log(f"[STOP ERR] {e}")
+        return True, "CANCELADO"
 
     def obtener_puertos_disponibles(self):
         """Retorna una lista con los nombres de todos los puertos COM disponibles."""
@@ -201,6 +219,7 @@ class ComunicacionESP32:
         if not self.conectado or not self.serial_conn or not pcm_bytes:
             return False, "ESP32 no conectado o sin audio"
 
+        self.cancelar_flag = False
         with self.lock:
             try:
                 self.serial_conn.reset_input_buffer()
@@ -214,6 +233,8 @@ class ComunicacionESP32:
                 t0 = time.time()
                 ready = False
                 while time.time() - t0 < 4:
+                    if self.cancelar_flag:
+                        return False, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
@@ -230,6 +251,10 @@ class ComunicacionESP32:
                 import base64
                 chunk_size = 1024
                 for idx in range(0, len(pcm_bytes), chunk_size):
+                    if self.cancelar_flag:
+                        self.serial_conn.write(b"STOP\n")
+                        self.serial_conn.flush()
+                        return False, "CANCELADO"
                     chunk = pcm_bytes[idx : idx + chunk_size]
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
@@ -241,6 +266,8 @@ class ComunicacionESP32:
                 # Esperar respuesta final AUDIO_PLAY_OK
                 t_ok = time.time()
                 while time.time() - t_ok < 4:
+                    if self.cancelar_flag:
+                        return False, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
@@ -257,6 +284,7 @@ class ComunicacionESP32:
         if not self.conectado or not self.serial_conn:
             return None, "ESP32 no conectado"
 
+        self.cancelar_flag = False
         with self.lock:
             try:
                 self.serial_conn.reset_input_buffer()
@@ -269,6 +297,8 @@ class ComunicacionESP32:
                 inicio = time.time()
                 bytes_esperados = 0
                 while time.time() - inicio < 6:
+                    if self.cancelar_flag:
+                        return None, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
@@ -285,8 +315,11 @@ class ComunicacionESP32:
                 import base64
                 pcm_data = bytearray()
                 t_mic = time.time()
-                # Esperar hasta 16 segundos para recibir la totalidad de los datos antes de liberar
                 while len(pcm_data) < bytes_esperados and (time.time() - t_mic < 16):
+                    if self.cancelar_flag:
+                        self.serial_conn.write(b"STOP\n")
+                        self.serial_conn.flush()
+                        return None, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()

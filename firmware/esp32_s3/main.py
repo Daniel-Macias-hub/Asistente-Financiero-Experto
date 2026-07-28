@@ -1,7 +1,7 @@
 # ==============================================================================
 # FIRMWARE DEFINITIVO BASE64 STREAMING ESP32-S3 (PCB MRD085A / Kit OKYN-G5806)
 # Memoria ultra-optimizada sin grandes búferes globales (Cero MemoryError)
-# Protocolo de audio Base64 100% inmune a caídas del REPL por bytes de control
+# Eco local instantáneo de alta fidelidad + Control de cancelación STOP
 # Micrófono INMP441 + Bocina MAX98357A + OLED SSD1306 + Control Serial UART
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
@@ -38,13 +38,14 @@ I2S_SPK_WS  = 16
 I2S_SPK_SD  = 7
 
 SAMPLE_RATE = 16000
-RECORD_SECS = 4
-TOTAL_BYTES_RECORD = SAMPLE_RATE * 2 * RECORD_SECS  # 128,000 bytes para 4s
+RECORD_SECS = 3
+TOTAL_BYTES_RECORD = SAMPLE_RATE * 2 * RECORD_SECS  # 96,000 bytes para 3s
 
-# Búferes estáticos ultra pequeños en RAM
+# Búferes estáticos en RAM
 gc.collect()
-READ_BUF = bytearray(512)   # Recibe muestras de 32-bit I2S del mic INMP441
-CONV_BUF = bytearray(256)   # Almacena muestras de 16-bit PCM para streaming PC
+READ_BUF = bytearray(512)       # Recibe muestras 32-bit I2S del mic INMP441
+CONV_BUF = bytearray(256)       # Almacena muestras 16-bit PCM para streaming PC
+AUDIO_RAM = bytearray(TOTAL_BYTES_RECORD) # 96 KB buffer RAM para eco directo cristalino
 
 # Verificación explícita de memoria libre
 mem_free_boot = gc.mem_free()
@@ -238,12 +239,17 @@ def reproducir_audio_pcm_stream(total_bytes):
     gc.collect()
     bytes_read = 0
     out_buf = bytearray(1024)
+    poll_in = uselect.poll()
+    poll_in.register(sys.stdin, uselect.POLLIN)
 
     while bytes_read < total_bytes:
+        events = poll_in.poll(100)
+        if not events:
+            continue
         line = sys.stdin.readline().strip()
         if not line:
             continue
-        if line == "AUDIO_PLAY_END":
+        if line in ("STOP", "AUDIO_PLAY_END"):
             break
         try:
             pcm_chunk = ubinascii.a2b_base64(line)
@@ -263,40 +269,72 @@ def reproducir_audio_pcm_stream(total_bytes):
     gc.collect()
 
 def grabar_y_transmitir_mic():
-    """Lee el mic INMP441 y transmite bloques de audio PCM codificados en Base64 por Serial."""
+    """Graba mic INMP441 a RAM, hace ECO LOCAL INSTANTO a la bocina (100% nítido) y transmite a PC."""
     if not audio_in:
         sys.stdout.write("MIC_DATA:0\n")
         safe_flush()
         return
 
     gc.collect()
-    for _ in range(3):
+    # 1. Vaciar lecturas basuras del búfer I2S
+    for _ in range(5):
         audio_in.readinto(READ_BUF)
 
-    sys.stdout.write(f"MIC_DATA:{TOTAL_BYTES_RECORD}\n")
-    safe_flush()
+    if oled:
+        oled.fill(0)
+        oled.rect(0, 0, 128, 64, 1)
+        oled.text("🔴 GRABANDO", 16, 20, 1)
+        oled.text("Habla 3 seg...", 12, 40, 1)
+        oled.show()
 
-    bytes_written = 0
-
-    while bytes_written < TOTAL_BYTES_RECORD:
+    # 2. Grabar 3 segundos a AUDIO_RAM
+    bytes_recorded = 0
+    while bytes_recorded < TOTAL_BYTES_RECORD:
         num_read = audio_in.readinto(READ_BUF)
         if num_read > 0:
             num_samples = num_read // 4
-            out_idx = 0
             for s_idx in range(num_samples):
-                if bytes_written + (out_idx * 2) >= TOTAL_BYTES_RECORD:
+                if bytes_recorded >= TOTAL_BYTES_RECORD:
                     break
                 val_32 = struct.unpack_from("<i", READ_BUF, s_idx * 4)[0]
                 val_16 = max(-32768, min(32767, val_32 >> 14))
-                struct.pack_into("<h", CONV_BUF, out_idx * 2, val_16)
-                out_idx += 1
+                struct.pack_into("<h", AUDIO_RAM, bytes_recorded, val_16)
+                bytes_recorded += 2
 
-            if out_idx > 0:
-                bytes_to_send = out_idx * 2
-                b64_chunk = ubinascii.b2a_base64(CONV_BUF[:bytes_to_send]).decode('utf-8').strip()
-                sys.stdout.write(f"MIC_CHUNK:{b64_chunk}\n")
-                safe_flush()
-                bytes_written += bytes_to_send
+    # 3. Reproducción LOCAL INSTANTÁNEA en la bocina MAX98357A (Idéntica a test_grabadora.py)
+    if audio_out:
+        if oled:
+            oled.fill(0)
+            oled.rect(0, 0, 128, 64, 1)
+            oled.text("🔊 REPRODUCIENDO", 4, 20, 1)
+            oled.text("Escucha bocina...", 6, 40, 1)
+            oled.show()
+        
+        # Enviar muestras mono a estéreo en bloques estáticos
+        stereo_buf = bytearray(1024)
+        num_tot_samples = bytes_recorded // 2
+        s_pos = 0
+        while s_pos < num_tot_samples:
+            to_send = min(256, num_tot_samples - s_pos)
+            for i in range(to_send):
+                s = struct.unpack_from("<h", AUDIO_RAM, (s_pos + i) * 2)[0]
+                struct.pack_into("<hh", stereo_buf, i * 4, s, s)
+            audio_out.write(stereo_buf[:to_send * 4])
+            s_pos += to_send
+        time.sleep(0.1)
+
+    mostrar_idle()
+
+    # 4. Transmitir audio grabado a la PC en bloques Base64
+    sys.stdout.write(f"MIC_DATA:{bytes_recorded}\n")
+    safe_flush()
+
+    chunk_size = 512
+    for idx in range(0, bytes_recorded, chunk_size):
+        chunk = AUDIO_RAM[idx : idx + chunk_size]
+        b64_chunk = ubinascii.b2a_base64(chunk).decode('utf-8').strip()
+        sys.stdout.write(f"MIC_CHUNK:{b64_chunk}\n")
+        safe_flush()
 
     sys.stdout.write("MIC_END\n")
     safe_flush()
@@ -326,7 +364,12 @@ def main():
                     if not linea:
                         continue
 
-                    if linea == "PING":
+                    if linea == "STOP":
+                        estado_actual = "IDLE"
+                        mostrar_idle()
+                        sys.stdout.write("STOP_ACK\n")
+                        safe_flush()
+                    elif linea == "PING":
                         sys.stdout.write("PONG\n")
                         safe_flush()
                     elif linea == "OLED_TEST":

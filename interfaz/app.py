@@ -174,6 +174,9 @@ class AsistenteApp:
         ttk.Button(f_btns_esp, text="📺 Test OLED", command=self.probar_oled_real).pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_esp, text="🔊 Test Audio", command=self.probar_audio_real).pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_esp, text="🎙️ Test Mic", command=self.probar_mic_real).pack(side=tk.LEFT, padx=2)
+        btn_stop = tk.Button(f_btns_esp, text="🛑 Detener Prueba", command=self.detener_prueba_activa,
+                             bg="#E53935", fg="#FFFFFF", font=("Segoe UI", 9, "bold"), bd=1, relief="raised", cursor="hand2", padx=6)
+        btn_stop.pack(side=tk.LEFT, padx=6)
 
         # Tarjeta 2: ESP32-CAM
         c_cam = ttk.Frame(card_panel, style="Card.TFrame")
@@ -321,9 +324,11 @@ class AsistenteApp:
                 if pcm_bytes:
                     self.agregar_log_consola("[TEST MIC] 🔊 Reproduciendo tu voz grabada directamente en la bocina física MAX98357A...")
                     esp32_comm.reproducir_audio_bocina_pcm(pcm_bytes)
-            else:
-                self.agregar_log_consola(f"[TEST MIC] ✗ Fallo: {res}")
-        threading.Thread(target=_run, daemon=True).start()
+    def detener_prueba_activa(self):
+        """Detiene y cancela de inmediato cualquier transferencia de audio o prueba en curso."""
+        self.agregar_log_consola("[SISTEMA] 🛑 Cancelación solicitada por el usuario. Deteniendo...")
+        esp32_comm.detener_operacion()
+        self.lbl_status_esp32.configure(text="Estado: 🟢 CONECTADO (IDLE)", foreground=CLR_GREEN)
 
     def probar_camara_real(self):
         """Captura una foto (con o sin stream activo) y la muestra en el Dashboard + popup."""
