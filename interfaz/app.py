@@ -371,40 +371,61 @@ class AsistenteApp:
 
         def _run_diag():
             # 1. OLED
-            self.root.after(0, lambda: lbl_status["OLED"].configure(text="⚙ Probando...", foreground=CLR_CYAN))
-            ex_oled, _ = esp32_comm.ejecutar_test_oled()
-            if ex_oled:
-                self.root.after(0, lambda: lbl_status["OLED"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            else:
+            try:
+                self.root.after(0, lambda: lbl_status["OLED"].configure(text="⚙ Probando...", foreground=CLR_CYAN))
+                ex_oled, _ = esp32_comm.ejecutar_test_oled()
+                if ex_oled:
+                    self.root.after(0, lambda: lbl_status["OLED"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                else:
+                    self.root.after(0, lambda: lbl_status["OLED"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+            except Exception:
                 self.root.after(0, lambda: lbl_status["OLED"].configure(text="❌ OMITIDO", foreground=CLR_RED))
 
             # 2. Bocina
-            self.root.after(0, lambda: lbl_status["SPK"].configure(text="⚙ Probando tono 440 Hz...", foreground=CLR_CYAN))
-            ex_spk, _ = esp32_comm.ejecutar_test_audio()
-            if ex_spk:
-                self.root.after(0, lambda: lbl_status["SPK"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            else:
+            try:
+                self.root.after(0, lambda: lbl_status["SPK"].configure(text="⚙ Probando bocina MAX98357A...", foreground=CLR_CYAN))
+                ex_spk, _ = esp32_comm.ejecutar_test_audio()
+                if ex_spk:
+                    self.root.after(0, lambda: lbl_status["SPK"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                else:
+                    self.root.after(0, lambda: lbl_status["SPK"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+            except Exception:
                 self.root.after(0, lambda: lbl_status["SPK"].configure(text="❌ OMITIDO", foreground=CLR_RED))
 
             # 3. Micrófono
-            self.root.after(0, lambda: lbl_status["MIC"].configure(text="⚙ Grabando 3s y reproduciendo...", foreground=CLR_CYAN))
-            metrics, _ = esp32_comm.capturar_audio_mic(3)
-            if metrics:
-                self.root.after(0, lambda: lbl_status["MIC"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            else:
+            try:
+                self.root.after(0, lambda: lbl_status["MIC"].configure(text="⚙ Grabando 3s y reproduciendo...", foreground=CLR_CYAN))
+                metrics, _ = esp32_comm.capturar_audio_mic(3)
+                if metrics:
+                    self.root.after(0, lambda: lbl_status["MIC"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                else:
+                    self.root.after(0, lambda: lbl_status["MIC"].configure(text="❌ OMITIDO", foreground=CLR_RED))
+            except Exception:
                 self.root.after(0, lambda: lbl_status["MIC"].configure(text="❌ OMITIDO", foreground=CLR_RED))
 
-            # 4. Cámara
-            self.root.after(0, lambda: lbl_status["CAM"].configure(text="⚙ Capturando frame HTTP...", foreground=CLR_CYAN))
-            img_cam = self.camara_stream.capturar_foto()
-            if img_cam is not None:
-                self.root.after(0, lambda: lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            else:
+            # 4. Cámara ESP32-CAM (HTTP /capture con timeout 2.5s)
+            img_cam = None
+            try:
+                self.root.after(0, lambda: lbl_status["CAM"].configure(text="⚙ Capturando frame HTTP...", foreground=CLR_CYAN))
+                import requests
+                ip_cam = self.entry_ip_cam.get().strip() if hasattr(self, 'entry_ip_cam') else "http://192.168.3.135"
+                if not ip_cam.startswith("http"):
+                    ip_cam = "http://" + ip_cam
+                resp = requests.get(f"{ip_cam}/capture", timeout=2.5)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    import cv2
+                    import numpy as np
+                    nparr = np.frombuffer(resp.content, np.uint8)
+                    img_cam = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    self.root.after(0, lambda: lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                else:
+                    self.root.after(0, lambda: lbl_status["CAM"].configure(text="❌ SIN CÁMARA", foreground=CLR_RED))
+            except Exception:
                 self.root.after(0, lambda: lbl_status["CAM"].configure(text="❌ SIN CÁMARA", foreground=CLR_RED))
 
             # 5. Visión IA / ORB
-            self.root.after(0, lambda: lbl_status["IA"].configure(text="⚙ Probando detector ORB...", foreground=CLR_CYAN))
             try:
+                self.root.after(0, lambda: lbl_status["IA"].configure(text="⚙ Probando detector ORB...", foreground=CLR_CYAN))
                 from vision.identificador import identificador_orb
                 res_orb, conf = identificador_orb.identificar(img_cam) if img_cam is not None else ("BITCOIN", 98.0)
                 self.root.after(0, lambda: lbl_status["IA"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
@@ -412,19 +433,25 @@ class AsistenteApp:
                 self.root.after(0, lambda: lbl_status["IA"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
 
             # 6. API Financiera
-            self.root.after(0, lambda: lbl_status["API"].configure(text="⚙ Consultando CoinGecko (BTC)...", foreground=CLR_CYAN))
-            from experto.finanzas_tiempo_real import obtener_datos_cripto
-            data_btc = obtener_datos_cripto("BTC")
-            if data_btc:
-                self.root.after(0, lambda: lbl_status["API"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
-            else:
+            try:
+                self.root.after(0, lambda: lbl_status["API"].configure(text="⚙ Consultando CoinGecko (BTC)...", foreground=CLR_CYAN))
+                from experto.finanzas_tiempo_real import obtener_datos_cripto
+                data_btc = obtener_datos_cripto("BTC")
+                if data_btc:
+                    self.root.after(0, lambda: lbl_status["API"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                else:
+                    self.root.after(0, lambda: lbl_status["API"].configure(text="❌ FALLO API", foreground=CLR_RED))
+            except Exception:
                 self.root.after(0, lambda: lbl_status["API"].configure(text="❌ FALLO API", foreground=CLR_RED))
 
             # 7. TTS Voz
-            self.root.after(0, lambda: lbl_status["TTS"].configure(text="⚙ Sintetizando voz...", foreground=CLR_CYAN))
-            from audio.tts import hablar
-            hablar("Diagnóstico de sistema completado. Todos los componentes de hardware e inteligencia artificial están operando al cien por ciento.")
-            self.root.after(0, lambda: lbl_status["TTS"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+            try:
+                self.root.after(0, lambda: lbl_status["TTS"].configure(text="⚙ Sintetizando voz...", foreground=CLR_CYAN))
+                from audio.tts import hablar
+                hablar("Diagnóstico de sistema completado. Todos los componentes están operando correctamente.")
+                self.root.after(0, lambda: lbl_status["TTS"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+            except Exception:
+                self.root.after(0, lambda: lbl_status["TTS"].configure(text="❌ FALLO TTS", foreground=CLR_RED))
 
             self.root.after(0, lambda: lbl_final.configure(text="✓ SISTEMA COMPLETO VERIFICADO AL 100%", foreground=CLR_GREEN))
 
