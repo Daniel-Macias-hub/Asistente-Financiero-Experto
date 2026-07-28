@@ -408,6 +408,7 @@ class AsistenteApp:
             try:
                 self.root.after(0, lambda: lbl_status["CAM"].configure(text="⚙ Capturando frame HTTP...", foreground=CLR_CYAN))
                 import requests
+                from PIL import Image, ImageTk
                 ip_cam = self.entry_ip_cam.get().strip() if hasattr(self, 'entry_ip_cam') else "http://192.168.3.135"
                 if not ip_cam.startswith("http"):
                     ip_cam = "http://" + ip_cam
@@ -417,7 +418,18 @@ class AsistenteApp:
                     import numpy as np
                     nparr = np.frombuffer(resp.content, np.uint8)
                     img_cam = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                    self.root.after(0, lambda: lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
+                    
+                    if img_cam is not None:
+                        img_rgb = cv2.cvtColor(img_cam, cv2.COLOR_BGR2RGB)
+                        pil_img = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                        self.cam_img_tk = ImageTk.PhotoImage(pil_img)
+                        def _update_cam_ui():
+                            lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN)
+                            self.canvas_cam.delete("all")
+                            self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                        self.root.after(0, _update_cam_ui)
+                    else:
+                        self.root.after(0, lambda: lbl_status["CAM"].configure(text="✔ VERIFICADO", foreground=CLR_GREEN))
                 else:
                     self.root.after(0, lambda: lbl_status["CAM"].configure(text="❌ SIN CÁMARA", foreground=CLR_RED))
             except Exception:

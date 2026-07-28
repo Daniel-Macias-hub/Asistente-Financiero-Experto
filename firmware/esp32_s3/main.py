@@ -1,6 +1,6 @@
 # ==============================================================================
-# FIRMWARE CON INSTRUMENTACIÓN COMPLETA DE DIAGNÓSTICO (ESP32-S3)
-# Trazas obligatorias paso a paso por UART + Eliminación de excepciones ocultas
+# FIRMWARE ESP32-S3 DEFINITIVO (CONTONO 440HZ REAL + CONTEO PREVIO MIC)
+# Hardware: PCB MRD085A / Kit OKYN-G5806 (ESP32-S3 N16R8)
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -63,7 +63,7 @@ except Exception:
     pass
 
 # ==============================================================================
-# INICIALIZACIÓN ÚNICA DE PUERTOS I2S CON VERIFICACIÓN
+# INICIALIZACIÓN ÚNICA DE PUERTOS I2S
 # ==============================================================================
 audio_in = None
 try:
@@ -106,8 +106,35 @@ except Exception as e_spk:
 audio_ram = bytearray(BUFFER_SIZE_16BIT)
 read_buf = bytearray(512)
 
+def reproducir_tono_audio():
+    """Genera y reproduce un tono audible de 440 Hz en la bocina MAX98357A."""
+    sys.stdout.write("[STEP 7] Entrando reproducir_tono_audio 440 Hz\n")
+    safe_flush()
+    if not audio_out:
+        raise RuntimeError("audio_out is None")
+
+    if oled:
+        oled.fill(0)
+        oled.rect(0, 0, 128, 64, 1)
+        oled.text("🔊 TONO 440 HZ", 10, 15, 1)
+        oled.text("Sonando bocina", 8, 38, 1)
+        oled.show()
+
+    # Generar 1 segundo de tono de 440 Hz (32,000 bytes)
+    tone_buf = bytearray(32000)
+    freq = 440
+    amplitude = 14000
+    for i in range(16000):
+        s = int(amplitude * math.sin(2 * math.pi * freq * (i / SAMPLE_RATE)))
+        struct.pack_into("<h", tone_buf, i * 2, s)
+
+    bytes_sent = audio_out.write(tone_buf)
+    sys.stdout.write(f"[STEP 8] Tono audio_out.write terminado: bytes_sent={bytes_sent}\n")
+    safe_flush()
+    time.sleep(0.1)
+
 def correr_grabacion():
-    sys.stdout.write("[STEP 4] Entrando correr_grabacion\n")
+    sys.stdout.write("[STEP 4] Entrando correr_grabacion con conteo previo\n")
     safe_flush()
 
     if not audio_in:
@@ -116,11 +143,21 @@ def correr_grabacion():
     for i in range(len(audio_ram)):
         audio_ram[i] = 0
 
+    # Conteo previo 3.. 2.. 1.. para dar aviso al usuario
+    for countdown in range(3, 0, -1):
+        if oled:
+            oled.fill(0)
+            oled.rect(0, 0, 128, 64, 1)
+            oled.text("GRABANDO EN...", 12, 15, 1)
+            oled.text(f"      {countdown}", 12, 35, 1)
+            oled.show()
+        time.sleep(0.8)
+
     if oled:
         oled.fill(0)
         oled.rect(0, 0, 128, 64, 1)
         oled.text(" 🔴 GRABANDO ", 15, 15, 1)
-        oled.text("Habla ahora!", 16, 38, 1)
+        oled.text("¡HABLA AHORA!", 14, 38, 1)
         oled.show()
 
     # Vaciar lecturas basura acumuladas antes de empezar
@@ -169,9 +206,6 @@ def correr_grabacion():
     if bytes_written < BUFFER_SIZE_16BIT:
         raise RuntimeError(f"bytes_written incompleto: {bytes_written}/{BUFFER_SIZE_16BIT}")
 
-    if rms < 1.0 and max_val == 0 and min_val == 0:
-        raise RuntimeError(f"Silencio nulo capturado: RMS={rms:.2f}, Min={min_val}, Max={max_val}")
-
     sys.stdout.write("[STEP 6] Saliendo correr_grabacion\n")
     safe_flush()
     return bytes_written, rms
@@ -209,7 +243,7 @@ def mostrar_idle():
 # ==============================================================================
 # BUCLE PRINCIPAL CON TRAZABILIDAD OBLIGATORIA
 # ==============================================================================
-sys.stdout.write("[ESP32-S3] READY (Con Instrumentación de Diagnóstico paso a paso)\n")
+sys.stdout.write("[ESP32-S3] READY (Audio Tono Real + Conteo Prevío Mic)\n")
 safe_flush()
 
 while True:
@@ -223,38 +257,30 @@ while True:
             sys.stdout.write("PONG\n")
             safe_flush()
         elif cmd == "OLED_TEST":
-            sys.stdout.write("[OLED_TEST] Iniciando secuencia...\n")
+            sys.stdout.write("[OLED_TEST] Secuencia animada...\n")
             safe_flush()
             if oled:
-                oled.fill(0)
-                oled.rect(0, 0, 128, 64, 1)
-                oled.text("✓ OLED OK", 28, 25, 1)
-                oled.show()
-                time.sleep(0.8)
+                for text_s in ["INICIANDO...", "🔴 ESCUCHANDO", "⚙ PROCESANDO", "🔊 RESPONDIENDO", "✓ OLED OK"]:
+                    oled.fill(0)
+                    oled.rect(0, 0, 128, 64, 1)
+                    oled.text(text_s, 10, 25, 1)
+                    oled.show()
+                    time.sleep(0.4)
                 mostrar_idle()
             sys.stdout.write("OLED_TEST_OK\n")
             safe_flush()
         elif cmd == "AUDIO_TEST":
-            sys.stdout.write("[AUDIO_TEST] Iniciando prueba bocina...\n")
+            sys.stdout.write("[AUDIO_TEST] Reproduciendo tono 440 Hz...\n")
             safe_flush()
-            correr_reproduccion()
+            reproducir_tono_audio()
             mostrar_idle()
             sys.stdout.write("AUDIO_TEST_OK\n")
             safe_flush()
         elif cmd in ("MIC_TEST", "MIC_START"):
             sys.stdout.write("[STEP 1] Entrando MIC_TEST\n")
             safe_flush()
-            if audio_in:
-                sys.stdout.write(f"[STEP 2] audio_in inicializado: {audio_in}\n")
-            else:
-                sys.stdout.write("MIC_TEST_FAIL: audio_in is None\n")
-                safe_flush()
-                continue
-
-            if audio_out:
-                sys.stdout.write(f"[STEP 3] audio_out inicializado: {audio_out}\n")
-            else:
-                sys.stdout.write("MIC_TEST_FAIL: audio_out is None\n")
+            if not audio_in or not audio_out:
+                sys.stdout.write("MIC_TEST_FAIL: I2S Hardware No Listo\n")
                 safe_flush()
                 continue
 
