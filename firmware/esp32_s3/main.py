@@ -1,5 +1,5 @@
 # ==============================================================================
-# FIRMWARE ESP32-S3 DEFINITIVO (CONTONO 440HZ REAL + CONTEO PREVIO MIC)
+# FIRMWARE ESP32-S3 DEFINITIVO (CON PAUSA DMA COMPLETA EN BARRIDO I2S)
 # Hardware: PCB MRD085A / Kit OKYN-G5806 (ESP32-S3 N16R8)
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
@@ -131,7 +131,8 @@ def reproducir_tono_audio():
     bytes_sent = audio_out.write(tone_buf)
     sys.stdout.write(f"[STEP 8] Tono audio_out.write terminado: bytes_sent={bytes_sent}\n")
     safe_flush()
-    time.sleep(0.1)
+    # Esperar 1.0s a que el DMA termine la emisión
+    time.sleep(1.0)
 
 def correr_grabacion():
     sys.stdout.write("[STEP 4] Entrando correr_grabacion con conteo previo\n")
@@ -227,7 +228,8 @@ def correr_reproduccion():
     bytes_sent = audio_out.write(audio_ram)
     sys.stdout.write(f"[STEP 8] audio_out.write terminado: bytes_sent={bytes_sent}\n")
     safe_flush()
-    time.sleep(0.1)
+    # Pausa de 3.0s para permitir que el DMA I2S complete la emisión de los 3s de voz grabada
+    time.sleep(3.0)
 
     sys.stdout.write("[STEP 9] Saliendo correr_reproduccion\n")
     safe_flush()
@@ -243,7 +245,7 @@ def mostrar_idle():
 # ==============================================================================
 # BUCLE PRINCIPAL CON TRAZABILIDAD OBLIGATORIA
 # ==============================================================================
-sys.stdout.write("[ESP32-S3] READY (Audio Tono Real + Conteo Prevío Mic)\n")
+sys.stdout.write("[ESP32-S3] READY (DMA Audio Sync Fix)\n")
 safe_flush()
 
 while True:
