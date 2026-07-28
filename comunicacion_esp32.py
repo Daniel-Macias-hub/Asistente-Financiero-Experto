@@ -259,6 +259,7 @@ class ComunicacionESP32:
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
+                    time.sleep(0.028)
 
                 self.serial_conn.write(b"AUDIO_PLAY_END\n")
                 self.serial_conn.flush()
