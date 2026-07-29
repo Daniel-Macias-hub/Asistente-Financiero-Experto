@@ -8,10 +8,10 @@ import requests
 import serial
 import serial.tools.list_ports
 
-def enviar_configuracion_wifi_serial(ssid, password, puerto=None, timeout=6.0):
+def enviar_configuracion_wifi_serial(ssid, password, puerto=None, puerto_excluir=None, timeout=6.0):
     """
     Envía credenciales Wi-Fi (SSID y Password) a la ESP32-CAM por el puerto serie indicado (SET_WIFI:ssid:pass).
-    Si el puerto no es especificado o falla, escanea automáticamente todos los puertos serie disponibles.
+    Si el puerto no es especificado o falla, escanea automáticamente todos los puertos serie disponibles (excluyendo el del ESP32-S3).
     
     Returns:
         tuple (bool_exito, str_mensaje_ip)
@@ -20,16 +20,19 @@ def enviar_configuracion_wifi_serial(ssid, password, puerto=None, timeout=6.0):
         return False, "SSID no puede estar vacío"
 
     puertos_a_probar = []
-    if puerto:
+    if puerto and puerto != puerto_excluir:
         puertos_a_probar.append(puerto)
     
-    # Agregar todos los puertos COM disponibles a la lista de intentos
-    puertos_sys = [p.device for p in serial.tools.list_ports.comports()]
+    # Agregar los demás puertos COM disponibles a la lista de intentos
+    puertos_sys = [p.device for p in serial.tools.list_ports.comports() if p.device != puerto_excluir]
     for p in puertos_sys:
         if p not in puertos_a_probar:
             puertos_a_probar.append(p)
 
-    ultimo_err = "No se encontraron puertos serie disponibles"
+    if not puertos_a_probar:
+        return False, "No se encontraron puertos serie para la cámara"
+
+    ultimo_err = "No se pudo conectar a la cámara por Serial"
     for p_try in puertos_a_probar:
         try:
             s = serial.Serial(p_try, 115200, timeout=2.0)

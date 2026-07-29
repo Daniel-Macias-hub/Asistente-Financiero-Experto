@@ -466,7 +466,8 @@ class AsistenteApp:
             lbl_res.configure(text=f"Enviando por Serial USB ({p_com or 'Auto'})...", fg=CLR_AMBER)
             def _task():
                 from comunicacion_camara import enviar_configuracion_wifi_serial
-                ok, msg = enviar_configuracion_wifi_serial(s, p, puerto=p_com)
+                p_ex = self.combo_puertos.get()
+                ok, msg = enviar_configuracion_wifi_serial(s, p, puerto=p_com, puerto_excluir=p_ex)
                 def _gui():
                     if ok:
                         lbl_res.configure(text=f"✔ {msg}", fg=CLR_GREEN)
