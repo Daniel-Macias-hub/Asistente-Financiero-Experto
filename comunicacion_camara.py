@@ -36,17 +36,27 @@ def enviar_configuracion_wifi_serial(ssid, password, puerto=None, puerto_excluir
     for p_try in puertos_a_probar:
         try:
             s = serial.Serial(p_try, 115200, timeout=2.0)
-            time.sleep(0.3)
+            s.dtr = False
+            s.rts = False
+            # Esperar a que la ESP32-CAM complete la secuencia de arranque tras abrir el puerto (1.5s)
+            time.sleep(1.5)
             s.reset_input_buffer()
             s.reset_output_buffer()
 
             cmd = f"SET_WIFI:{ssid.strip()}:{password.strip()}\n"
-            s.write(cmd.encode('utf-8'))
-            s.flush()
+            cmd_bytes = cmd.encode('utf-8')
 
-            inicio = time.time()
+            # Enviar comando en reintentos por si la placa recién terminó de arrancar
             ok_recibido = False
             ip_hallada = None
+            inicio = time.time()
+
+            for _attempt in range(3):
+                s.write(cmd_bytes)
+                s.flush()
+                time.sleep(0.3)
+                if s.in_waiting > 0:
+                    break
 
             while time.time() - inicio < timeout:
                 if s.in_waiting > 0:
