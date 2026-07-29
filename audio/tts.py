@@ -88,21 +88,24 @@ def hablar(texto: str):
                 try:
                     import pythoncom
                     pythoncom.CoInitialize()
-                    import win32com.client
-                    stream = win32com.client.Dispatch("SAPI.SpFileStream")
-                    # 3 = SSFMCreateForWrite
-                    stream.Open(temp_wav, 3, False)
-                    voice = win32com.client.Dispatch("SAPI.SpVoice")
-                    voice.AudioOutputStream = stream
-                    # Seleccionar voz en español si está disponible
-                    for v in voice.GetVoices():
-                        desc = v.GetDescription().lower()
-                        if "sabina" in desc or "spanish" in desc or "es-" in desc or "mexico" in desc:
-                            voice.Voice = v
-                            break
-                    voice.Speak(texto_limpio)
-                    stream.Close()
-                    wav_generado = os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 100
+                    try:
+                        import win32com.client
+                        stream = win32com.client.Dispatch("SAPI.SpFileStream")
+                        # 3 = SSFMCreateForWrite
+                        stream.Open(temp_wav, 3, False)
+                        voice = win32com.client.Dispatch("SAPI.SpVoice")
+                        voice.AudioOutputStream = stream
+                        # Seleccionar voz en español si está disponible
+                        for v in voice.GetVoices():
+                            desc = v.GetDescription().lower()
+                            if "sabina" in desc or "spanish" in desc or "es-" in desc or "mexico" in desc:
+                                voice.Voice = v
+                                break
+                        voice.Speak(texto_limpio)
+                        stream.Close()
+                        wav_generado = os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 100
+                    finally:
+                        pythoncom.CoUninitialize()
                 except Exception as ex_sapi:
                     print(f"[SAPI NATIVE ERR] {ex_sapi}")
 

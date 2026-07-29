@@ -285,8 +285,8 @@ class ComunicacionESP32:
             except Exception as e:
                 return False, str(e)
 
-    def capturar_audio_mic(self, duracion_sec=3):
-        """Dispara la prueba local completa de grabación/reproducción en RAM del ESP32-S3."""
+    def capturar_audio_mic(self, duracion_sec=5):
+        """Dispara la prueba local completa guiada de 5s grabación/reproducción en RAM del ESP32-S3."""
         if not self.conectado or not self.serial_conn:
             return None, "ESP32 no conectado"
 
@@ -304,7 +304,7 @@ class ComunicacionESP32:
                 rms_real = 0.0
                 min_real = 0
                 max_real = 0
-                while time.time() - inicio < 18:
+                while time.time() - inicio < 22:
                     if self.cancelar_flag:
                         return None, "CANCELADO"
                     if self.serial_conn.in_waiting > 0:
@@ -328,7 +328,7 @@ class ComunicacionESP32:
                                 pass
                         if "MIC_TEST_OK" in linea:
                             metrics = {
-                                "duracion": 3.0,
+                                "duracion": 5.0,
                                 "rate": 16000,
                                 "rms": rms_real,
                                 "max_peak": max_real,

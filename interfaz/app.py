@@ -284,6 +284,7 @@ class AsistenteApp:
         f_btns_cam = ttk.Frame(c_cam, style="Card.TFrame")
         f_btns_cam.pack(fill='x', padx=12, pady=6)
         ttk.Button(f_btns_cam, text="🔌 Conectar CAM", command=self.autodetectar_camara_dinamico).pack(side=tk.LEFT, padx=2)
+        ttk.Button(f_btns_cam, text="⚙️ Config Wi-Fi", command=self.abrir_modal_config_wifi_camara).pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_cam, text="📷 Foto", command=self.probar_camara_real).pack(side=tk.LEFT, padx=2)
         self.btn_stream = ttk.Button(f_btns_cam, text="📹 Video en Vivo", command=self.toggle_video_stream)
         self.btn_stream.pack(side=tk.LEFT, padx=2)
@@ -419,10 +420,58 @@ class AsistenteApp:
 
         threading.Thread(target=_run, daemon=True).start()
 
+    def abrir_modal_config_wifi_camara(self):
+        """Abre un modal para configurar dinámicamente las credenciales Wi-Fi de la ESP32-CAM por Serial."""
+        win_wifi = tk.Toplevel(self.root)
+        win_wifi.title("⚙️ Configuración Wi-Fi de ESP32-CAM")
+        win_wifi.geometry("420x260")
+        win_wifi.configure(bg=BG_CARD)
+        win_wifi.transient(self.root)
+
+        tk.Label(win_wifi, text="⚙️ Configurar Red Wi-Fi (ESP32-CAM)",
+                 font=FONT_CARD, fg=CLR_GREEN, bg=BG_CARD).pack(pady=(15, 5))
+        tk.Label(win_wifi, text="Envía el SSID y contraseña a la memoria flash NVS vía Serial USB.",
+                 font=FONT_SMALL, fg=TEXT_MUTED, bg=BG_CARD).pack(pady=(0, 10))
+
+        frm = tk.Frame(win_wifi, bg=BG_CARD)
+        frm.pack(padx=20, pady=5, fill='x')
+
+        tk.Label(frm, text="Nombre Red (SSID):", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=0, column=0, sticky='w', pady=5)
+        entry_ssid = ttk.Entry(frm, width=24)
+        entry_ssid.insert(0, "UNITEC_Academia")
+        entry_ssid.grid(row=0, column=1, pady=5)
+
+        tk.Label(frm, text="Contraseña:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=1, column=0, sticky='w', pady=5)
+        entry_pass = ttk.Entry(frm, width=24, show="*")
+        entry_pass.insert(0, "IT@unitec_2023")
+        entry_pass.grid(row=1, column=1, pady=5)
+
+        lbl_res = tk.Label(win_wifi, text="", font=FONT_SMALL, fg=CLR_CYAN, bg=BG_CARD)
+        lbl_res.pack(pady=5)
+
+        def _enviar():
+            s = entry_ssid.get().strip()
+            p = entry_pass.get().strip()
+            lbl_res.configure(text="Enviando por Serial USB...", fg=CLR_AMBER)
+            def _task():
+                from comunicacion_camara import enviar_configuracion_wifi_serial
+                ok, msg = enviar_configuracion_wifi_serial(s, p, puerto="COM14")
+                def _gui():
+                    if ok:
+                        lbl_res.configure(text=f"✔ {msg}", fg=CLR_GREEN)
+                        self.agregar_log_consola(f"[CÁMARA] ✓ Credenciales Wi-Fi enviadas por Serial: SSID='{s}'. {msg}")
+                    else:
+                        lbl_res.configure(text=f"❌ {msg}", fg=CLR_RED)
+                        self.agregar_log_consola(f"[CÁMARA] ❌ Error enviando Wi-Fi por Serial: {msg}")
+                self.root.after(0, _gui)
+            threading.Thread(target=_task, daemon=True).start()
+
+        ttk.Button(win_wifi, text="💾 Guardar y Conectar por Serial", command=_enviar).pack(pady=10)
+
     def probar_oled_real(self):
-        """Test OLED individual: animación osciloscopio + pantalla ASISTENTE."""
+        """Test OLED individual: animación osciloscopio + ecualizador + icono + checkmark."""
         def _run():
-            self.agregar_log_consola("[TEST OLED] Enviando OLED_ANIM: animación osciloscopio...")
+            self.agregar_log_consola("[TEST OLED] Enviando OLED_ANIM: osciloscopio, ecualizador, icono y checkmark...")
             if not esp32_comm.conectado or not esp32_comm.serial_conn:
                 self.agregar_log_consola("[TEST OLED] ✗ ESP32 no conectado.")
                 return
@@ -433,13 +482,13 @@ class AsistenteApp:
                     esp32_comm.serial_conn.flush()
                     import time as _t
                     t0 = _t.time()
-                    while _t.time() - t0 < 5:
+                    while _t.time() - t0 < 8:
                         if esp32_comm.serial_conn.in_waiting > 0:
                             raw = esp32_comm.serial_conn.readline()
                             linea = raw.decode("utf-8", errors="ignore").strip()
                             self.agregar_log_consola(f"RX ◄ {repr(raw)} -> '{linea}'")
-                            if "OLED_ANIM_OK" in linea:
-                                self.agregar_log_consola("[TEST OLED] ✓ Animación completada. Pantalla mostrando ASISTENTE.")
+                            if "OLED_TEST_OK" in linea or "OLED_ANIM_OK" in linea:
+                                self.agregar_log_consola("[TEST OLED] ✓ Secuencia OLED completada. Pantalla OK.")
                                 if hasattr(self, "mtr_audio"):
                                     self.root.after(0, lambda: self.mtr_audio.configure(text=" OLED OK", fg=CLR_GREEN))
                                 return
@@ -451,27 +500,29 @@ class AsistenteApp:
 
     def probar_audio_real(self):
         def _run():
-            self.agregar_log_consola("[TEST AUDIO] Solicitando tono 440Hz por MAX98357A + Bocina...")
+            self.agregar_log_consola("[TEST AUDIO] Solicitando melodía musical 4s por MAX98357A + Bocina...")
             exito, res = esp32_comm.ejecutar_test_audio()
             if exito and "AUDIO_TEST_OK" in res:
-                self.agregar_log_consola("[TEST AUDIO] ✓ AUDIO_TEST_OK recibido.")
+                self.agregar_log_consola("[TEST AUDIO] ✓ AUDIO_TEST_OK recibido. Melodía reproducida limpiamente.")
+                from audio.tts import hablar
+                self.agregar_log_consola("[TEST AUDIO] 🗣️ Emitiendo confirmación TTS hablada en la bocina...")
+                hablar("Altavoz funcionando correctamente.")
             else:
                 self.agregar_log_consola(f"[TEST AUDIO] ✗ Fallo: {res}")
         threading.Thread(target=_run, daemon=True).start()
 
     def probar_mic_real(self):
-        """Test Micrófono: grabación 3s + métricas reales de RMS + nivel de señal."""
+        """Test Micrófono: grabación guiada 5s + métricas reales de RMS + nivel de señal + pico max."""
         def _run():
             esp32_comm.enviar_comando_oled("ESCUCHANDO")
-            self.agregar_log_consola("[TEST MIC] Grabando... Habla cuando veas el conteo 3-2-1 en el OLED.")
-            metrics, res = esp32_comm.capturar_audio_mic(3)
+            self.agregar_log_consola("[TEST MIC] Grabando 5s con conteo regresivo y vúmetro dinámico en el OLED...")
+            metrics, res = esp32_comm.capturar_audio_mic(5)
             if metrics and metrics.get("rms", 0) >= 0:
                 rms  = metrics.get("rms", 0.0)
-                dur  = metrics.get("duracion", 3.0)
+                dur  = metrics.get("duracion", 5.0)
                 peak = metrics.get("max_peak", 0)
-                # Clasificar nivel de señal
                 if rms < 100:
-                    nivel = "⚠️ SIN SEÑAL";
+                    nivel = "⚠️ SIN SEÑAL"
                     color = CLR_RED
                 elif rms < 1000:
                     nivel = "✔ SEÑAL DÉBIL"
@@ -485,21 +536,18 @@ class AsistenteApp:
                 self.agregar_log_consola(
                     f"[TEST MIC] Prueba finalizada correctamente.")
                 self.agregar_log_consola(
-                    f"  Duración: {dur:.1f}s  |  RMS: {rms:.1f}  |  Pico: {peak}  |  Nivel: {nivel}")
+                    f"  Duración: {dur:.1f}s  |  RMS: {rms:.1f}  |  Pico Máx: {peak}  |  Nivel: {nivel}")
                 if hasattr(self, "mtr_mic"):
                     self.root.after(0, lambda r=rms, c=color: (
                         self.mtr_mic.configure(text=f" RMS:{r:.0f}", fg=c)))
                 if res == "MIC_TEST_OK":
-                    self.agregar_log_consola("[TEST MIC] ✓ Audio grabado y reproducido en la bocina MAX98357A.")
+                    self.agregar_log_consola("[TEST MIC] ✓ Audio grabado (5s) y reproducido en la bocina MAX98357A.")
                 else:
-                    self.agregar_log_consola(f"[TEST MIC] ⚠ Resultado: {res}")
+                    self.agregar_log_consola(f"[TEST MIC] ⚠️ Resultado: {res}")
             else:
                 self.agregar_log_consola(f"[TEST MIC] ✗ Fallo en paso: {res}")
-                if "TIMEOUT" in str(res):
-                    self.agregar_log_consola("[TEST MIC] Diagnóstico: El ESP32 no completó MIC_TEST en 18s. Verifica conexión I2S del INMP441.")
-                elif "FAIL" in str(res):
-                    self.agregar_log_consola("[TEST MIC] Diagnóstico: El ESP32 reportó error en hardware. Revisa pines SCK/WS/SD del micrófono.")
             esp32_comm.enviar_comando_oled("IDLE")
+        threading.Thread(target=_run, daemon=True).start()
     def detener_prueba_activa(self):
         """Detiene y cancela de inmediato cualquier transferencia de audio o prueba en curso."""
         self.agregar_log_consola("[SISTEMA] 🛑 Cancelación solicitada por el usuario. Deteniendo...")
@@ -792,8 +840,52 @@ class AsistenteApp:
             )
             self.root.after(0, lambda: lbl_final.configure(text=resumen_txt, fg=resumen_color))
 
-            # Reporte expandible
+            # Reporte expandible y pantalla final de confirmación
             def _show_report():
+                if n_fail == 0:
+                    # Pantalla Final Estilizada de Diagnóstico Completado
+                    diag_box = tk.Toplevel(win_diag)
+                    diag_box.title("✔ DIAGNÓSTICO DEL SISTEMA COMPLETADO")
+                    diag_box.geometry("480x440")
+                    diag_box.configure(bg=BG_CARD)
+                    diag_box.transient(win_diag)
+
+                    tk.Label(diag_box, text="═══════════════════════════════════════",
+                             font=("Consolas", 10), fg=CLR_GREEN, bg=BG_CARD).pack(pady=(12, 0))
+                    tk.Label(diag_box, text="DIAGNÓSTICO DEL SISTEMA COMPLETADO",
+                             font=("Segoe UI", 13, "bold"), fg=CLR_GREEN, bg=BG_CARD).pack(pady=3)
+                    tk.Label(diag_box, text="Todos los componentes fueron verificados correctamente.",
+                             font=("Segoe UI", 9), fg=TEXT_MUTED, bg=BG_CARD).pack(pady=(0, 8))
+
+                    comp_frame = tk.Frame(diag_box, bg=BG_CARD2, bd=1, relief="solid")
+                    comp_frame.pack(fill='x', padx=25, pady=4, ipady=6)
+
+                    componentes_ok = [
+                        "✔ ESP32-S3",
+                        "✔ ESP32-CAM",
+                        "✔ OLED SSD1306",
+                        "✔ Micrófono INMP441",
+                        "✔ Bocina MAX98357A",
+                        "✔ Visión Artificial",
+                        "✔ APIs Financieras",
+                        "✔ IA"
+                    ]
+
+                    for comp in componentes_ok:
+                        tk.Label(comp_frame, text=comp, font=("Segoe UI", 10, "bold"),
+                                 fg=CLR_GREEN, bg=BG_CARD2, anchor='w').pack(fill='x', padx=18, pady=1)
+
+                    tk.Label(diag_box, text="Sistema listo para operar.",
+                             font=("Segoe UI", 11, "bold"), fg=CLR_CYAN, bg=BG_CARD).pack(pady=8)
+                    tk.Label(diag_box, text="═══════════════════════════════════════",
+                             font=("Consolas", 10), fg=CLR_GREEN, bg=BG_CARD).pack(pady=(0, 6))
+
+                    ttk.Button(diag_box, text="Aceptar", command=diag_box.destroy).pack(pady=4)
+
+                    # Emitir confirmación de voz por TTS
+                    from audio.tts import hablar
+                    hablar("Diagnóstico del sistema completado. Todos los componentes fueron verificados correctamente. Sistema listo para operar.")
+
                 import tkinter.scrolledtext as st_
                 rep_win = tk.Toplevel(win_diag)
                 rep_win.title("Reporte de Diagnóstico")

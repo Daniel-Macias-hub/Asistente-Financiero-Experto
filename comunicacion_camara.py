@@ -1,12 +1,57 @@
 """
 Módulo de Autodescubrimiento y Comunicación Serial/HTTP para ESP32-CAM.
-Permite obtener la dirección IP asignada a la cámara automáticamente por Serial (COM14)
-y verificar su estado de conexión en la red local.
+Permite obtener la dirección IP asignada a la cámara automáticamente por Serial (COM14),
+enviar credenciales Wi-Fi (SSID/Password) vía Serial, y verificar su estado de conexión HTTP.
 """
 import time
 import requests
 import serial
 import serial.tools.list_ports
+
+def enviar_configuracion_wifi_serial(ssid, password, puerto="COM14", timeout=6.0):
+    """
+    Envía credenciales Wi-Fi (SSID y Password) a la ESP32-CAM por el puerto serie (SET_WIFI:ssid:pass).
+    La ESP32-CAM guardará las credenciales en memoria flash NVS y se reiniciará para conectarse.
+    
+    Returns:
+        tuple (bool_exito, str_mensaje_ip)
+    """
+    if not ssid:
+        return False, "SSID no puede estar vacío"
+
+    try:
+        s = serial.Serial(puerto, 115200, timeout=2.0)
+        time.sleep(0.3)
+        s.reset_input_buffer()
+        s.reset_output_buffer()
+
+        cmd = f"SET_WIFI:{ssid.strip()}:{password.strip()}\n"
+        s.write(cmd.encode('utf-8'))
+        s.flush()
+
+        inicio = time.time()
+        ok_recibido = False
+        ip_hallada = None
+
+        while time.time() - inicio < timeout:
+            if s.in_waiting > 0:
+                linea = s.readline().decode('utf-8', errors='ignore').strip()
+                if "SET_WIFI_OK" in linea:
+                    ok_recibido = True
+                if "CAM_IP:http://" in linea:
+                    ip_hallada = linea.split("CAM_IP:")[1].strip()
+                    break
+                elif "Servidor listo: http://" in linea:
+                    ip_hallada = linea.split("Servidor listo: ")[1].strip()
+                    break
+            time.sleep(0.05)
+
+        s.close()
+        if ok_recibido or ip_hallada:
+            return True, ip_hallada or "Configuración enviada correctamente. Reiniciando cámara..."
+        return False, "Sin respuesta SET_WIFI_OK del puerto serie"
+    except Exception as e:
+        return False, f"Error en puerto serie {puerto}: {e}"
 
 def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
     """
@@ -21,7 +66,6 @@ def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
         s.reset_input_buffer()
         s.reset_output_buffer()
 
-        # Enviar comando GET_IP
         s.write(b"GET_IP\n")
         s.flush()
 
@@ -37,8 +81,7 @@ def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
                 elif "Servidor listo: http://" in linea:
                     ip_hallada = linea.split("Servidor listo: ")[1].strip()
                     break
-                elif "http://172." in linea or "http://192." in linea or "http://10." in linea:
-                    # Extraer URL si aparece en los logs
+                elif "http://172." in linea or "http://192." in linea or "http://10." in linea or "http://192.168.4.1" in linea:
                     parts = linea.split("http://")
                     if len(parts) > 1:
                         ip_clean = parts[1].split()[0].split("/")[0]
@@ -51,7 +94,6 @@ def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
     except Exception as e:
         return None, None
 
-
 def autodetectar_ip_camara(puerto_s3="COM11"):
     """
     Escanea todos los puertos COM disponibles (excluyendo el del ESP32-S3)
@@ -63,7 +105,6 @@ def autodetectar_ip_camara(puerto_s3="COM11"):
     puertos = serial.tools.list_ports.comports()
     disponibles = [p.device for p in puertos if p.device != puerto_s3]
 
-    # Priorizar COM14 si existe
     if "COM14" in disponibles:
         disponibles.remove("COM14")
         disponibles.insert(0, "COM14")
@@ -75,10 +116,10 @@ def autodetectar_ip_camara(puerto_s3="COM11"):
 
     return None, None
 
-
 def probar_conexion_camara_http(url_base, timeout_sec=2.5):
     """
     Realiza una petición HTTP rápida a /capture para confirmar que el servidor web de la cámara responde.
+    Fuerza cabecera Connection: close para evitar retención de sockets TCP.
     
     Returns:
         tuple (bool_exito, str_mensaje)
@@ -92,7 +133,8 @@ def probar_conexion_camara_http(url_base, timeout_sec=2.5):
 
     capture_url = f"{url_base}/capture"
     try:
-        r = requests.get(capture_url, timeout=timeout_sec)
+        headers = {'Connection': 'close'}
+        r = requests.get(capture_url, headers=headers, timeout=timeout_sec)
         if r.status_code == 200 and len(r.content) > 100:
             return True, f"Conectado OK ({len(r.content)//1024} KB)"
         else:
@@ -173,8 +215,5 @@ class CamaraSerialManager:
 camara_serial_mgr = CamaraSerialManager("COM14")
 
 def capturar_frame_por_serial(puerto="COM14", timeout=3.0):
-    """
-    Captura una imagen JPEG utilizando el gestor de puerto serie persistente camara_serial_mgr.
-    """
     camara_serial_mgr.puerto = puerto
     return camara_serial_mgr.capturar_frame(timeout=timeout)
