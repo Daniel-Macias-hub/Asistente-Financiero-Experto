@@ -8,10 +8,10 @@ import requests
 import serial
 import serial.tools.list_ports
 
-def enviar_configuracion_wifi_serial(ssid, password, puerto="COM14", timeout=6.0):
+def enviar_configuracion_wifi_serial(ssid, password, puerto=None, timeout=6.0):
     """
-    Envía credenciales Wi-Fi (SSID y Password) a la ESP32-CAM por el puerto serie (SET_WIFI:ssid:pass).
-    La ESP32-CAM guardará las credenciales en memoria flash NVS y se reiniciará para conectarse.
+    Envía credenciales Wi-Fi (SSID y Password) a la ESP32-CAM por el puerto serie indicado (SET_WIFI:ssid:pass).
+    Si el puerto no es especificado o falla, escanea automáticamente todos los puertos serie disponibles.
     
     Returns:
         tuple (bool_exito, str_mensaje_ip)
@@ -19,43 +19,56 @@ def enviar_configuracion_wifi_serial(ssid, password, puerto="COM14", timeout=6.0
     if not ssid:
         return False, "SSID no puede estar vacío"
 
-    try:
-        s = serial.Serial(puerto, 115200, timeout=2.0)
-        time.sleep(0.3)
-        s.reset_input_buffer()
-        s.reset_output_buffer()
+    puertos_a_probar = []
+    if puerto:
+        puertos_a_probar.append(puerto)
+    
+    # Agregar todos los puertos COM disponibles a la lista de intentos
+    puertos_sys = [p.device for p in serial.tools.list_ports.comports()]
+    for p in puertos_sys:
+        if p not in puertos_a_probar:
+            puertos_a_probar.append(p)
 
-        cmd = f"SET_WIFI:{ssid.strip()}:{password.strip()}\n"
-        s.write(cmd.encode('utf-8'))
-        s.flush()
+    ultimo_err = "No se encontraron puertos serie disponibles"
+    for p_try in puertos_a_probar:
+        try:
+            s = serial.Serial(p_try, 115200, timeout=2.0)
+            time.sleep(0.3)
+            s.reset_input_buffer()
+            s.reset_output_buffer()
 
-        inicio = time.time()
-        ok_recibido = False
-        ip_hallada = None
+            cmd = f"SET_WIFI:{ssid.strip()}:{password.strip()}\n"
+            s.write(cmd.encode('utf-8'))
+            s.flush()
 
-        while time.time() - inicio < timeout:
-            if s.in_waiting > 0:
-                linea = s.readline().decode('utf-8', errors='ignore').strip()
-                if "SET_WIFI_OK" in linea:
-                    ok_recibido = True
-                if "CAM_IP:http://" in linea:
-                    ip_hallada = linea.split("CAM_IP:")[1].strip()
-                    break
-                elif "Servidor listo: http://" in linea:
-                    ip_hallada = linea.split("Servidor listo: ")[1].strip()
-                    break
-            time.sleep(0.05)
+            inicio = time.time()
+            ok_recibido = False
+            ip_hallada = None
 
-        s.close()
-        if ok_recibido or ip_hallada:
-            return True, ip_hallada or "Configuración enviada correctamente. Reiniciando cámara..."
-        return False, "Sin respuesta SET_WIFI_OK del puerto serie"
-    except Exception as e:
-        return False, f"Error en puerto serie {puerto}: {e}"
+            while time.time() - inicio < timeout:
+                if s.in_waiting > 0:
+                    linea = s.readline().decode('utf-8', errors='ignore').strip()
+                    if "SET_WIFI_OK" in linea:
+                        ok_recibido = True
+                    if "CAM_IP:http://" in linea:
+                        ip_hallada = linea.split("CAM_IP:")[1].strip()
+                        break
+                    elif "Servidor listo: http://" in linea:
+                        ip_hallada = linea.split("Servidor listo: ")[1].strip()
+                        break
+                time.sleep(0.05)
 
-def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
+            s.close()
+            if ok_recibido or ip_hallada:
+                return True, ip_hallada or f"Configuración enviada correctamente en {p_try}. Reiniciando cámara..."
+        except Exception as e:
+            ultimo_err = f"Error en puerto {p_try}: {e}"
+
+    return False, ultimo_err
+
+def obtener_ip_camara_por_serial(puerto="COM3", timeout=2.5):
     """
-    Se conecta al puerto serie de la ESP32-CAM (por defecto COM14) y le solicita su dirección IP.
+    Se conecta al puerto serie de la ESP32-CAM y le solicita su dirección IP.
     
     Returns:
         tuple (str_ip_url, str_puerto_usado) o (None, None)
@@ -94,9 +107,9 @@ def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
     except Exception as e:
         return None, None
 
-def autodetectar_ip_camara(puerto_s3="COM11"):
+def autodetectar_ip_camara(puerto_s3=None):
     """
-    Escanea todos los puertos COM disponibles (excluyendo el del ESP32-S3)
+    Escanea todos los puertos COM disponibles (excluyendo el del ESP32-S3 si fue indicado)
     para localizar automáticamente la IP de la ESP32-CAM.
     
     Returns:
@@ -104,10 +117,6 @@ def autodetectar_ip_camara(puerto_s3="COM11"):
     """
     puertos = serial.tools.list_ports.comports()
     disponibles = [p.device for p in puertos if p.device != puerto_s3]
-
-    if "COM14" in disponibles:
-        disponibles.remove("COM14")
-        disponibles.insert(0, "COM14")
 
     for port in disponibles:
         ip, p_ok = obtener_ip_camara_por_serial(port, timeout=1.8)

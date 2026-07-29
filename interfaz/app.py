@@ -424,7 +424,7 @@ class AsistenteApp:
         """Abre un modal para configurar dinámicamente las credenciales Wi-Fi de la ESP32-CAM por Serial."""
         win_wifi = tk.Toplevel(self.root)
         win_wifi.title("⚙️ Configuración Wi-Fi de ESP32-CAM")
-        win_wifi.geometry("420x260")
+        win_wifi.geometry("440x300")
         win_wifi.configure(bg=BG_CARD)
         win_wifi.transient(self.root)
 
@@ -436,26 +436,37 @@ class AsistenteApp:
         frm = tk.Frame(win_wifi, bg=BG_CARD)
         frm.pack(padx=20, pady=5, fill='x')
 
-        tk.Label(frm, text="Nombre Red (SSID):", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=0, column=0, sticky='w', pady=5)
+        # Selección dinámica de Puerto COM para la Cámara
+        tk.Label(frm, text="Puerto COM Cámara:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=0, column=0, sticky='w', pady=4)
+        puertos_sys = esp32_comm.obtener_puertos_disponibles()
+        combo_port_cam = ttk.Combobox(frm, values=puertos_sys, width=22)
+        combo_port_cam.grid(row=0, column=1, pady=4)
+        if puertos_sys:
+            p_s3 = self.combo_puertos.get()
+            cam_ports = [p for p in puertos_sys if p != p_s3]
+            combo_port_cam.set(cam_ports[0] if cam_ports else puertos_sys[0])
+
+        tk.Label(frm, text="Nombre Red (SSID):", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=1, column=0, sticky='w', pady=4)
         entry_ssid = ttk.Entry(frm, width=24)
-        entry_ssid.insert(0, "UNITEC_Academia")
-        entry_ssid.grid(row=0, column=1, pady=5)
+        entry_ssid.insert(0, "Router HUAWEI")
+        entry_ssid.grid(row=1, column=1, pady=4)
 
-        tk.Label(frm, text="Contraseña:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=1, column=0, sticky='w', pady=5)
+        tk.Label(frm, text="Contraseña:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=2, column=0, sticky='w', pady=4)
         entry_pass = ttk.Entry(frm, width=24, show="*")
-        entry_pass.insert(0, "IT@unitec_2023")
-        entry_pass.grid(row=1, column=1, pady=5)
+        entry_pass.insert(0, "3C0461FB9BAD")
+        entry_pass.grid(row=2, column=1, pady=4)
 
-        lbl_res = tk.Label(win_wifi, text="", font=FONT_SMALL, fg=CLR_CYAN, bg=BG_CARD)
+        lbl_res = tk.Label(win_wifi, text="", font=FONT_SMALL, fg=CLR_CYAN, bg=BG_CARD, wraplength=380)
         lbl_res.pack(pady=5)
 
         def _enviar():
             s = entry_ssid.get().strip()
             p = entry_pass.get().strip()
-            lbl_res.configure(text="Enviando por Serial USB...", fg=CLR_AMBER)
+            p_com = combo_port_cam.get().strip() or None
+            lbl_res.configure(text=f"Enviando por Serial USB ({p_com or 'Auto'})...", fg=CLR_AMBER)
             def _task():
                 from comunicacion_camara import enviar_configuracion_wifi_serial
-                ok, msg = enviar_configuracion_wifi_serial(s, p, puerto="COM14")
+                ok, msg = enviar_configuracion_wifi_serial(s, p, puerto=p_com)
                 def _gui():
                     if ok:
                         lbl_res.configure(text=f"✔ {msg}", fg=CLR_GREEN)
@@ -466,7 +477,7 @@ class AsistenteApp:
                 self.root.after(0, _gui)
             threading.Thread(target=_task, daemon=True).start()
 
-        ttk.Button(win_wifi, text="💾 Guardar y Conectar por Serial", command=_enviar).pack(pady=10)
+        ttk.Button(win_wifi, text="💾 Guardar y Conectar por Serial", command=_enviar).pack(pady=8)
 
     def probar_oled_real(self):
         """Test OLED individual: animación osciloscopio + ecualizador + icono + checkmark."""

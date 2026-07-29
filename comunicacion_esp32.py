@@ -80,6 +80,7 @@ class ComunicacionESP32:
 
                     t0 = time.time()
                     resp_acumulada = ""
+                    repl_detectado = False
                     while time.time() - t0 < 3.0:
                         if self.serial_conn.in_waiting > 0:
                             raw_line = self.serial_conn.readline()
@@ -87,13 +88,22 @@ class ComunicacionESP32:
                             if self.callback_log:
                                 self.callback_log(f"RX ◄ {repr(raw_line)} -> '{line_str}'")
                             
-                            if "PONG" in line_str or "READY" in line_str or "PONG" in raw_line.decode('utf-8', errors='ignore'):
+                            if "PONG" in line_str or "READY" in line_str:
                                 confirmado = True
                                 break
+                            elif ">>>" in line_str or "NameError" in line_str:
+                                repl_detectado = True
                         time.sleep(0.05)
 
                     if confirmado:
                         break
+                    elif repl_detectado:
+                        if self.callback_log:
+                            self.callback_log("[COM REPL] MicroPython en consola '>>> '. Enviando Ctrl+D (Soft Reset) para ejecutar main.py...")
+                        # Enviar Ctrl+D (Soft Reset) para forzar la ejecución de main.py
+                        self.serial_conn.write(b"\x04\nimport main\n")
+                        self.serial_conn.flush()
+                        time.sleep(1.0)
                     else:
                         time.sleep(0.3)
 
