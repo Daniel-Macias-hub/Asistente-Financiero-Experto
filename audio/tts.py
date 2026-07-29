@@ -51,7 +51,10 @@ def _convertir_wav_a_pcm_16k_mono(wav_path: str) -> bytes:
                 np.linspace(0, len(audio), new_len, endpoint=False),
                 np.arange(len(audio)),
                 audio
-            ).astype(np.int16)
+            )
+
+        # Atenuar la amplitud al 45% para evitar la saturación/recorte del hardware MAX98357A
+        audio = (audio * 0.45).astype(np.int16)
 
         return audio.tobytes()
     except Exception as e:
@@ -122,10 +125,10 @@ def hablar(texto: str):
                     pcm_bytes = _convertir_wav_a_pcm_16k_mono(temp_wav)
                     if pcm_bytes:
                         if not esp32_comm.conectado:
-                            esp32_comm.conectar("COM11")
+                            esp32_comm.conectar(esp32_comm.puerto or "COM5")
 
                         if esp32_comm.conectado:
-                            print(f"[TTS -> PCB] Transmitiendo {len(pcm_bytes)} bytes PCM a la bocina MAX98357A en COM11...")
+                            print(f"[TTS -> PCB] Transmitiendo {len(pcm_bytes)} bytes PCM a la bocina MAX98357A en {esp32_comm.puerto}...")
                             esp32_comm.reproducir_audio_bocina_pcm(pcm_bytes)
                         else:
                             import sounddevice as sd

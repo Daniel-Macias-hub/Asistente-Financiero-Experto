@@ -273,10 +273,18 @@ class AsistenteApp:
         f_ip.pack(fill='x', padx=12, pady=2)
         ttk.Label(f_ip, text="IP Cámara: ", font=FONT_BODY).pack(side=tk.LEFT)
         self.entry_ip_cam = ttk.Entry(f_ip, width=22)
-        self.entry_ip_cam.insert(0, "http://172.28.4.36")
+        self.entry_ip_cam.insert(0, "http://192.168.3.135")
         self.entry_ip_cam.pack(side=tk.LEFT, padx=5)
-        ttk.Label(f_ip, text="(sólo IP base, sin /capture ni /stream)",
-                  font=("Segoe UI", 9), foreground=TEXT_MUTED).pack(side=tk.LEFT, padx=2)
+
+        def _copiar_ip_cam():
+            val = self.entry_ip_cam.get().strip()
+            if val:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(val)
+                self.agregar_log_consola(f"[CÁMARA] 📋 IP '{val}' copiada al portapapeles.")
+
+        ttk.Button(f_ip, text="📋 Copiar IP", command=_copiar_ip_cam).pack(side=tk.LEFT, padx=3)
+        ttk.Label(f_ip, text="(sólo IP base)", font=("Segoe UI", 9), foreground=TEXT_MUTED).pack(side=tk.LEFT, padx=2)
 
         self.lbl_status_cam = ttk.Label(c_cam, text="Estado: 🔴 DESCONOCIDO", font=("Segoe UI", 10, "bold"), foreground=TEXT_MUTED)
         self.lbl_status_cam.pack(anchor='w', padx=12, pady=2)
@@ -472,6 +480,15 @@ class AsistenteApp:
                     if ok:
                         lbl_res.configure(text=f"✔ {msg}", fg=CLR_GREEN)
                         self.agregar_log_consola(f"[CÁMARA] ✓ Credenciales Wi-Fi enviadas por Serial: SSID='{s}'. {msg}")
+                        if "http://" in msg:
+                            try:
+                                ip_ext = "http://" + msg.split("http://")[1].split()[0]
+                                self.entry_ip_cam.delete(0, tk.END)
+                                self.entry_ip_cam.insert(0, ip_ext)
+                                self.agregar_log_consola(f"[CÁMARA] 📋 IP actualizada automáticamente en Dashboard: {ip_ext}")
+                                self.autodetectar_camara_dinamico()
+                            except Exception:
+                                pass
                     else:
                         lbl_res.configure(text=f"❌ {msg}", fg=CLR_RED)
                         self.agregar_log_consola(f"[CÁMARA] ❌ Error enviando Wi-Fi por Serial: {msg}")
