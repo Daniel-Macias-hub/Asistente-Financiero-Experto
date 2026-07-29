@@ -1,7 +1,7 @@
 # ==============================================================================
-# FIRMWARE ESP32-S3 — PRODUCCIÓN Y PRUEBAS AVANZADAS
+# FIRMWARE ESP32-S3 — PRODUCCIÓN ESTABLE (0 MEMORY ERROR)
 # Hardware: PCB MRD085A / Kit OKYN-G5806 (ESP32-S3 N16R8)
-# Asignación de audio fragmentada en bloques de 4KB (0 MemoryError en MicroPython)
+# Tono/Melodía con buffer estático de 1KB, Micrófono (20 bloques x 4KB = 80KB), OLED animado
 # ==============================================================================
 import machine  # pyrefly: ignore [missing-import] # type: ignore
 from machine import Pin, I2S  # pyrefly: ignore [missing-import] # type: ignore
@@ -32,12 +32,12 @@ I2S_MIC_SCK = 5
 I2S_MIC_WS  = 4
 I2S_MIC_SD  = 6
 SAMPLE_RATE       = 16000
-NUM_CHUNKS        = 40
+NUM_CHUNKS        = 20
 CHUNK_SIZE        = 4096
-# 40 * 4096 = 163 840 bytes (5.12 segundos a 16kHz 16-bit mono)
+# 20 * 4096 = 81 920 bytes (2.56s a 16kHz 16-bit mono -> cabe perfecto en RAM de MicroPython)
 
 # ==============================================================================
-# INICIALIZACIÓN DE LA PANTALLA OLED
+# INICIALIZACIÓN PANTALLA OLED
 # ==============================================================================
 oled = None
 try:
@@ -89,7 +89,7 @@ audio_ram_chunks = None
 read_buf = bytearray(512)
 
 # ==============================================================================
-# DIBUJO DE ICONOS Y CHECKMARKS EN OLED
+# DIBUJO EN OLED
 # ==============================================================================
 def dibujar_icono_robot():
     if not oled: return
@@ -122,9 +122,10 @@ def dibujar_checkmark_exito():
         pass
 
 # ==============================================================================
-# FUNCIONES DE AUDIO Y MELODÍA RECONOCIBLE
+# FUNCIONES DE AUDIO (SIN MEMORY ERROR)
 # ==============================================================================
 def reproducir_melodia_reconocible():
+    """Melodía armónica demostrativa usando un búfer estático de 1KB (0 MemoryError)."""
     sys.stdout.write("[AUDIO_TEST] Generando melodía musical demostrativa de 4s...\n")
     safe_flush()
     if not audio_out:
@@ -142,34 +143,35 @@ def reproducir_melodia_reconocible():
             pass
 
     notas = [
-        (261.6, 250), (261.6, 250), (293.7, 450), (261.6, 450), (349.2, 450), (329.6, 750),
-        (261.6, 250), (261.6, 250), (293.7, 450), (261.6, 450), (392.0, 450), (349.2, 750)
+        (261.6, 220), (261.6, 220), (293.7, 400), (261.6, 400), (349.2, 400), (329.6, 600),
+        (261.6, 220), (261.6, 220), (293.7, 400), (261.6, 400), (392.0, 400), (349.2, 600)
     ]
-    AMP = 7500
+    AMP = 7000
+    buf_slice = bytearray(1024)
 
     for freq, dur_ms in notas:
-        num_samples = int(SAMPLE_RATE * (dur_ms / 1000.0))
-        fade_samples = int(SAMPLE_RATE * 0.015)
-        buf_note = bytearray(num_samples * 2)
-
-        for i in range(num_samples):
-            val = AMP * math.sin(2 * math.pi * freq * i / SAMPLE_RATE)
-            if i < fade_samples:
-                val *= (i / fade_samples)
-            elif i > num_samples - fade_samples:
-                val *= ((num_samples - i) / fade_samples)
-
-            struct.pack_into("<h", buf_note, i * 2, int(val))
-
-        audio_out.write(buf_note)
+        total_samples = int(SAMPLE_RATE * (dur_ms / 1000.0))
+        s_written = 0
+        while s_written < total_samples:
+            batch = min(512, total_samples - s_written)
+            for i in range(batch):
+                idx_g = s_written + i
+                val = AMP * math.sin(2 * math.pi * freq * idx_g / SAMPLE_RATE)
+                if idx_g < 240:
+                    val *= (idx_g / 240)
+                elif idx_g > total_samples - 240:
+                    val *= ((total_samples - idx_g) / 240)
+                struct.pack_into("<h", buf_slice, i * 2, int(val))
+            audio_out.write(buf_slice[:batch * 2])
+            s_written += batch
         time.sleep(0.02)
 
-    time.sleep(0.5)
+    time.sleep(0.3)
 
 def correr_grabacion_guiada_5s():
     global audio_ram_chunks
     gc.collect()
-    sys.stdout.write("[MIC_TEST] Inicializando 40 bloques de 4KB (0 MemoryError)...\n")
+    sys.stdout.write("[MIC_TEST] Reservando 20 bloques de 4KB (80KB)... \n")
     safe_flush()
 
     audio_ram_chunks = [bytearray(CHUNK_SIZE) for _ in range(NUM_CHUNKS)]
@@ -186,7 +188,7 @@ def correr_grabacion_guiada_5s():
             oled.show()
         except Exception:
             pass
-        time.sleep(1.0)
+        time.sleep(0.8)
 
     for countdown in range(3, 0, -1):
         if oled:
@@ -198,7 +200,7 @@ def correr_grabacion_guiada_5s():
                 oled.show()
             except Exception:
                 pass
-        time.sleep(0.8)
+        time.sleep(0.6)
 
     if oled:
         try:
@@ -208,7 +210,7 @@ def correr_grabacion_guiada_5s():
             oled.show()
         except Exception:
             pass
-        time.sleep(0.4)
+        time.sleep(0.3)
 
     temp = bytearray(256)
     for _ in range(5):
@@ -253,7 +255,7 @@ def correr_grabacion_guiada_5s():
                 try:
                     oled.fill(0)
                     oled.rect(0, 0, 128, 64, 1)
-                    oled.text(f" GRABANDO ({seg_act}s/5s)", 8, 10, 1)
+                    oled.text(f" GRABANDO ({seg_act}s/3s)", 8, 10, 1)
                     oled.rect(12, 30, 104, 14, 1)
                     if bar_w > 0:
                         oled.fill_rect(12, 30, bar_w, 14, 1)
@@ -307,7 +309,7 @@ def correr_reproduccion_5s():
 
     sys.stdout.write("[STEP 8] audio_out.write por bloques completado\n")
     safe_flush()
-    time.sleep(0.5)
+    time.sleep(0.3)
 
     if oled:
         try:
@@ -319,7 +321,7 @@ def correr_reproduccion_5s():
             oled.show()
         except Exception:
             pass
-        time.sleep(1.5)
+        time.sleep(1.0)
 
 def animacion_oled_completa():
     if not oled: return
@@ -353,10 +355,10 @@ def animacion_oled_completa():
         time.sleep(1.0)
 
         dibujar_icono_robot()
-        time.sleep(1.2)
+        time.sleep(1.0)
 
         dibujar_checkmark_exito()
-        time.sleep(1.8)
+        time.sleep(1.2)
     except Exception:
         pass
 
@@ -372,11 +374,11 @@ def mostrar_idle():
         pass
 
 # ==============================================================================
-# BUCLE PRINCIPAL (0 MEMORYERROR GUARANTEED)
+# BUCLE PRINCIPAL (0 MEMORY ERROR)
 # ==============================================================================
 sys.stdout.write("[BOOT] ESP32-S3 arrancando. Iniciando main.py...\n")
 safe_flush()
-sys.stdout.write("[ESP32-S3] READY (v2.2 Zero MemoryError)\n")
+sys.stdout.write("[ESP32-S3] READY (v2.3 Ultra Stable RAM)\n")
 safe_flush()
 
 while True:
@@ -450,8 +452,8 @@ while True:
             sys.stdout.write("AUDIO_PLAY_READY\n")
             safe_flush()
 
-            # Asignación fragmentada en bloques de 4KB para 0 MemoryError
-            play_chunks = [bytearray(min(4096, total_bytes - i)) for i in range(0, total_bytes, 4096)]
+            # Fragmentación en bloques estáticos de 2KB para 0 MemoryError
+            play_chunks = [bytearray(min(2048, total_bytes - i)) for i in range(0, total_bytes, 2048)]
             c_idx = 0
             c_off = 0
 

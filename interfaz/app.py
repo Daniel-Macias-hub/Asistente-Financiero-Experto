@@ -729,16 +729,16 @@ class AsistenteApp:
                     ip_cam = "http://" + ip_cam
                 base_cam = ip_cam.rstrip("/").replace("/capture","").replace("/stream","")
                 
-                # Intentar captura preliminar; si falla por timeout, autodetectar IP real por Serial
+                headers_cam = {'Connection': 'close'}
                 try:
-                    resp = requests.get(f"{base_cam}/capture", timeout=2)
+                    resp = requests.get(f"{base_cam}/capture", headers=headers_cam, timeout=3)
                 except Exception:
-                    # Fallback de autodescubrimiento por Serial COM14
+                    # Fallback de autodescubrimiento por Serial
                     ip_auto, _ = autodetectar_ip_camara(puerto_s3=self.combo_puertos.get() or "COM11")
                     if ip_auto:
                         base_cam = ip_auto.rstrip("/")
                         self.root.after(0, lambda: (self.entry_ip_cam.delete(0, tk.END), self.entry_ip_cam.insert(0, ip_auto)))
-                        resp = requests.get(f"{base_cam}/capture", timeout=3)
+                        resp = requests.get(f"{base_cam}/capture", headers=headers_cam, timeout=3)
                     else:
                         raise
 
