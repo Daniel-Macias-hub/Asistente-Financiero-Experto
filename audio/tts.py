@@ -80,44 +80,60 @@ def hablar(texto: str):
     def _run_tts():
         with _tts_lock:
             from comunicacion_esp32 import esp32_comm
-            temp_wav = f"temp_speech_{threading.get_ident()}.wav"
+            temp_wav = os.path.abspath(f"temp_speech_{threading.get_ident()}.wav")
             
             try:
-                engine = pyttsx3.init()
-                voces = engine.getProperty('voices')
-                
-                voz_seleccionada = None
-                for voz in voces:
-                    nombre_lower = voz.name.lower()
-                    id_lower = voz.id.lower()
-                    if "sabina" in nombre_lower or "es-mx" in id_lower or "spanish (mexico)" in nombre_lower:
-                        voz_seleccionada = voz.id
-                        break
-                    elif "spanish" in nombre_lower or "es-" in id_lower or "es_" in id_lower:
-                        voz_seleccionada = voz.id
+                # 1. Intentar renderizar WAV de forma ultra-rápida y directa usando win32com SAPI5
+                wav_generado = False
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                    import win32com.client
+                    stream = win32com.client.Dispatch("SAPI.SpFileStream")
+                    # 3 = SSFMCreateForWrite
+                    stream.Open(temp_wav, 3, False)
+                    voice = win32com.client.Dispatch("SAPI.SpVoice")
+                    voice.AudioOutputStream = stream
+                    # Seleccionar voz en español si está disponible
+                    for v in voice.GetVoices():
+                        desc = v.GetDescription().lower()
+                        if "sabina" in desc or "spanish" in desc or "es-" in desc or "mexico" in desc:
+                            voice.Voice = v
+                            break
+                    voice.Speak(texto_limpio)
+                    stream.Close()
+                    wav_generado = os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 100
+                except Exception as ex_sapi:
+                    print(f"[SAPI NATIVE ERR] {ex_sapi}")
 
-                if voz_seleccionada:
-                    engine.setProperty('voice', voz_seleccionada)
-                
-                engine.setProperty('rate', 155)
-                engine.setProperty('volume', 1.0)
-
-                # Si el circuito está conectado por USB, renderizar WAV y enviar por I2S a la bocina
-                if esp32_comm.conectado:
+                # 2. Fallback a pyttsx3 si SAPI directo falló
+                if not wav_generado:
+                    engine = pyttsx3.init()
+                    engine.setProperty('rate', 155)
                     engine.save_to_file(texto_limpio, temp_wav)
                     engine.runAndWait()
-                    
-                    if os.path.exists(temp_wav):
-                        pcm_bytes = _convertir_wav_a_pcm_16k_mono(temp_wav)
-                        if pcm_bytes:
+                    wav_generado = os.path.exists(temp_wav) and os.path.getsize(temp_wav) > 100
+
+                # 3. Transmitir audio PCM a la bocina del ESP32-S3 (COM11) o reproducir en PC
+                if wav_generado:
+                    pcm_bytes = _convertir_wav_a_pcm_16k_mono(temp_wav)
+                    if pcm_bytes:
+                        if not esp32_comm.conectado:
+                            esp32_comm.conectar("COM11")
+
+                        if esp32_comm.conectado:
+                            print(f"[TTS -> PCB] Transmitiendo {len(pcm_bytes)} bytes PCM a la bocina MAX98357A en COM11...")
                             esp32_comm.reproducir_audio_bocina_pcm(pcm_bytes)
-                else:
-                    # Si no hay circuito conectado, reproducir por bocinas locales de PC como respaldo
-                    engine.say(texto_limpio)
-                    engine.runAndWait()
+                        else:
+                            import sounddevice as sd
+                            audio_np = np.frombuffer(pcm_bytes, dtype=np.int16)
+                            sd.play(audio_np, 16000)
+                            sd.wait()
 
             except Exception as e:
                 print(f"[TTS ERR] {e}")
+                if esp32_comm.conectado:
+                    esp32_comm.ejecutar_test_audio()
             finally:
                 if os.path.exists(temp_wav):
                     try:

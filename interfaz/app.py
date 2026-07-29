@@ -25,9 +25,10 @@ from entrenamiento.agregar_concepto import nuevo_concepto
 from entrenamiento.agregar_relacion import nueva_relacion
 from entrenamiento.agregar_regla import nueva_regla
 from audio.tts import hablar, detener_habla
-from audio.stt import escuchar_desde_pcm
+from audio.stt import escuchar, escuchar_desde_pcm
 from conocimiento.database import get_connection
 from comunicacion_esp32 import esp32_comm
+from comunicacion_camara import autodetectar_ip_camara, probar_conexion_camara_http
 from vision.detector_logo import DetectorCriptoUnificado
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ class AsistenteApp:
         self._foto_escaneada_tk = None
         self.configurar_estilos()
         self.crear_widgets()
+        self.root.after(400, self.conectar_esp32_dinamico)
 
 
     def configurar_estilos(self):
@@ -271,7 +273,7 @@ class AsistenteApp:
         f_ip.pack(fill='x', padx=12, pady=2)
         ttk.Label(f_ip, text="IP Cámara: ", font=FONT_BODY).pack(side=tk.LEFT)
         self.entry_ip_cam = ttk.Entry(f_ip, width=22)
-        self.entry_ip_cam.insert(0, "http://192.168.3.135")
+        self.entry_ip_cam.insert(0, "http://172.28.4.36")
         self.entry_ip_cam.pack(side=tk.LEFT, padx=5)
         ttk.Label(f_ip, text="(sólo IP base, sin /capture ni /stream)",
                   font=("Segoe UI", 9), foreground=TEXT_MUTED).pack(side=tk.LEFT, padx=2)
@@ -281,6 +283,7 @@ class AsistenteApp:
 
         f_btns_cam = ttk.Frame(c_cam, style="Card.TFrame")
         f_btns_cam.pack(fill='x', padx=12, pady=6)
+        ttk.Button(f_btns_cam, text="🔌 Conectar CAM", command=self.autodetectar_camara_dinamico).pack(side=tk.LEFT, padx=2)
         ttk.Button(f_btns_cam, text="📷 Foto", command=self.probar_camara_real).pack(side=tk.LEFT, padx=2)
         self.btn_stream = ttk.Button(f_btns_cam, text="📹 Video en Vivo", command=self.toggle_video_stream)
         self.btn_stream.pack(side=tk.LEFT, padx=2)
@@ -327,10 +330,12 @@ class AsistenteApp:
         puertos = esp32_comm.obtener_puertos_disponibles()
         self.combo_puertos['values'] = puertos
         
-        # Preferir COM5 o cualquier puerto distinto a COM4 (ESP32-CAM)
-        puertos_s3 = [p for p in puertos if p != "COM4"]
+        # Excluir puertos de la cámara (COM14, COM4)
+        puertos_s3 = [p for p in puertos if p not in ("COM14", "COM4")]
         
-        if "COM5" in puertos:
+        if "COM11" in puertos:
+            self.combo_puertos.set("COM11")
+        elif "COM5" in puertos:
             self.combo_puertos.set("COM5")
         elif puertos_s3:
             self.combo_puertos.set(puertos_s3[0])
@@ -343,14 +348,14 @@ class AsistenteApp:
         puerto_sel = self.combo_puertos.get()
 
         def _run():
-            self.agregar_log_consola(f"[CONEXIÓN] Intentando conectar a {puerto_sel} (ESP32-S3)...")
+            self.agregar_log_consola(f"[CONEXIÓN] Intentando conectar a {puerto_sel} (ESP32-S3 PCB)...")
             exito, puerto_ok = esp32_comm.conectar(puerto_sel)
             
-            # Si el puerto seleccionado falló, probar automáticamente todos los demás puertos disponibles
+            # Si el puerto seleccionado falló, probar automáticamente todos los demás puertos disponibles excepto los de cámara
             if not exito:
                 puertos_disp = esp32_comm.obtener_puertos_disponibles()
                 for p_alt in puertos_disp:
-                    if p_alt != puerto_sel:
+                    if p_alt != puerto_sel and p_alt not in ("COM14", "COM4"):
                         self.agregar_log_consola(f"[AUTO-BUSQUEDA] Probando puerto alternativo {p_alt}...")
                         exito_alt, puerto_ok_alt = esp32_comm.conectar(p_alt)
                         if exito_alt:
@@ -377,6 +382,40 @@ class AsistenteApp:
                     self.lbl_ind_esp.configure(text="🔴 ESP32-S3", foreground=CLR_RED)
                 self.root.after(0, _gui_fail)
                 self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por otro programa o Thonny, desconecta y vuelve a conectar el cable USB del ESP32-S3.")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def autodetectar_camara_dinamico(self):
+        """Escanea los puertos serie (COM14, etc.) para auto-descubrir la IP de la cámara y verificar conexión HTTP."""
+        def _run():
+            self.agregar_log_consola("[CÁMARA] 🔍 Buscando ESP32-CAM (vía Serial COM / HTTP)...")
+            p_s3 = self.combo_puertos.get() or "COM11"
+            ip_found, port_found = autodetectar_ip_camara(puerto_s3=p_s3)
+            
+            if not ip_found:
+                # Si no respondió por serial, tomar la IP escrita en la casilla
+                ip_found = self.entry_ip_cam.get().strip()
+
+            if ip_found:
+                ok, msg = probar_conexion_camara_http(ip_found)
+                def _gui_res():
+                    self.entry_ip_cam.delete(0, tk.END)
+                    self.entry_ip_cam.insert(0, ip_found)
+                    if ok:
+                        self.lbl_status_cam.configure(text=f"Estado: 🟢 CONECTADO ({ip_found})", foreground=CLR_GREEN)
+                        self.lbl_ind_cam.configure(text=f"● ESP32-CAM  OK", fg="#081018", bg=CLR_GREEN)
+                        self.agregar_log_consola(f"[CÁMARA] ✓ ESP32-CAM Conectada exitosamente en {ip_found} ({msg})")
+                    else:
+                        self.lbl_status_cam.configure(text=f"Estado: 🟡 IP {ip_found} ({msg})", foreground=CLR_AMBER)
+                        self.lbl_ind_cam.configure(text="🔴 ESP32-CAM", foreground=CLR_RED)
+                        self.agregar_log_consola(f"[CÁMARA] ⚠️ IP hallada {ip_found}, pero respuesta HTTP: {msg}")
+                self.root.after(0, _gui_res)
+            else:
+                def _gui_fail():
+                    self.lbl_status_cam.configure(text="Estado: 🔴 NO DETECTADA", foreground=CLR_RED)
+                    self.lbl_ind_cam.configure(text="🔴 ESP32-CAM", foreground=CLR_RED)
+                    self.agregar_log_consola("[CÁMARA] ❌ No se pudo autodetectar la IP por Serial. Revisa la conexión USB de la cámara.")
+                self.root.after(0, _gui_fail)
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -629,14 +668,23 @@ class AsistenteApp:
                 if not ip_cam.startswith("http"):
                     ip_cam = "http://" + ip_cam
                 base_cam = ip_cam.rstrip("/").replace("/capture","").replace("/stream","")
-                # Encender flash
+                
+                # Intentar captura preliminar; si falla por timeout, autodetectar IP real por Serial
                 try:
-                    requests.get(f"{base_cam}/led?state=1", timeout=1.5)
+                    resp = requests.get(f"{base_cam}/capture", timeout=2)
                 except Exception:
-                    pass
-                _t.sleep(0.2)
-                resp = requests.get(f"{base_cam}/capture", timeout=3)
+                    # Fallback de autodescubrimiento por Serial COM14
+                    ip_auto, _ = autodetectar_ip_camara(puerto_s3=self.combo_puertos.get() or "COM11")
+                    if ip_auto:
+                        base_cam = ip_auto.rstrip("/")
+                        self.root.after(0, lambda: (self.entry_ip_cam.delete(0, tk.END), self.entry_ip_cam.insert(0, ip_auto)))
+                        resp = requests.get(f"{base_cam}/capture", timeout=3)
+                    else:
+                        raise
+
                 try:
+                    requests.get(f"{base_cam}/led?state=1", timeout=1)
+                    _t.sleep(0.1)
                     requests.get(f"{base_cam}/led?state=0", timeout=1)
                 except Exception:
                     pass
@@ -1291,9 +1339,47 @@ class AsistenteApp:
                 time.sleep(0.01)
             except Exception as e:
                 self.agregar_log_consola(f"[STREAM ERR] {e}")
-                time.sleep(0.5)
+                time.sleep(0.3)
+                break
 
-        session.close()
+        # ── Modo 3: Fallback Directo USB Serial (COM14) — Bypassea Firewall / Red Institucional ──
+        if self.stream_activo:
+            self.agregar_log_consola("[CÁMARA] HTTP bloqueado/aislado por red institucional. Activando captura directa por USB Serial COM14...")
+            from comunicacion_camara import capturar_frame_por_serial
+            while self.stream_activo:
+                img = capturar_frame_por_serial("COM14", timeout=1.5)
+                if img is not None:
+                    self.ultimo_frame_cv2 = img
+                    h, w, _ = img.shape
+                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    img_pil = Image.fromarray(img_rgb).resize((400, 266), Image.Resampling.LANCZOS)
+                    self.cam_img_tk = ImageTk.PhotoImage(img_pil)
+
+                    frames_count += 1
+                    elapsed_fps = time.time() - t_start_fps
+                    fps = frames_count / elapsed_fps if elapsed_fps > 0 else 0
+
+                    def _update_serial_gui(fps_val=fps, width=w, height=h):
+                        if getattr(self, 'canvas_cam_img_id', None) is None:
+                            self.canvas_cam.delete("all")
+                            self.canvas_cam_img_id = self.canvas_cam.create_image(0, 0, image=self.cam_img_tk, anchor='nw')
+                        else:
+                            self.canvas_cam.itemconfig(self.canvas_cam_img_id, image=self.cam_img_tk)
+
+                        self.lbl_metrics_cam.configure(text=f"Res: {width}x{height} px | USB Serial COM14 | FPS: {fps_val:.1f}")
+                        self.lbl_status_cam.configure(text=f"Estado: 🟢 USB SERIAL ({fps_val:.1f} FPS)", foreground=CLR_GREEN)
+                        self.lbl_ind_cam.configure(text=f"● ESP32-CAM (USB Serial)", fg="#081018", bg=CLR_GREEN)
+
+                    self.root.after(0, _update_serial_gui)
+                else:
+                    time.sleep(0.1)
+
+        try:
+            from comunicacion_camara import camara_serial_mgr
+            camara_serial_mgr.cerrar()
+            session.close()
+        except Exception:
+            pass
         def _reset_gui():
             self.lbl_status_cam.configure(text="Estado: ⚪ IDLE", foreground=TEXT_MUTED)
         self.root.after(0, _reset_gui)
@@ -1608,26 +1694,25 @@ class AsistenteApp:
 
     def consultar_voz_mic_fisico(self):
         def _run():
-            self.agregar_mensaje("Usuario", "🎙️ [🔴 ESCUCHANDO — Habla ahora al micrófono INMP441 por 4 segundos...]", "user")
+            self.agregar_mensaje("Usuario", "🎙️ [🔴 ESCUCHANDO — Habla ahora por 4 segundos...]", "user")
             esp32_comm.enviar_comando_oled("ESCUCHANDO")
-            metrics, res = esp32_comm.capturar_audio_mic(4)
-            esp32_comm.enviar_comando_oled("PROCESANDO")
             
-            if metrics and "pcm_bytes" in metrics:
-                dur = metrics.get("duracion", 4.0)
-                rms = metrics.get("rms", 0.0)
-                self.agregar_log_consola(f"[MIC AUDIO VERIFICADO] Captura recibida: {dur:.1f}s | Nivel RMS={rms:.1f}")
-                
-                texto = escuchar_desde_pcm(metrics["pcm_bytes"])
-                self.agregar_mensaje("Usuario", f"🎙️ \"{texto}\"", "user")
+            # Escuchar mediante Vosk STT
+            texto = escuchar(4.0)
+            
+            esp32_comm.enviar_comando_oled("PROCESANDO")
+            self.agregar_log_consola(f"[STT VOZ] Transcripción capturada: '{texto}'")
+            self.agregar_mensaje("Usuario", f"🎙️ \"{texto}\"", "user")
+            
+            if texto and texto != "No se reconoció el comando de voz." and not texto.startswith("Error"):
                 resp, _ = procesar_consulta(texto)
-                self.agregar_mensaje("Asistente Experto", resp, "bot")
-                esp32_comm.enviar_comando_oled("RESPONDIENDO")
-                hablar(resp)
-                esp32_comm.enviar_comando_oled("IDLE")
             else:
-                self.agregar_mensaje("Asistente Experto", "No se recibió audio del micrófono INMP441. Verifica el cableado I2S en COM5.", "bot")
-                esp32_comm.enviar_comando_oled("ERROR")
+                resp = "No logré escuchar claramente tu pregunta. Por favor presiona 'Hablar' nuevamente o elige una pregunta sugerida."
+                
+            self.agregar_mensaje("Asistente Experto", resp, "bot")
+            esp32_comm.enviar_comando_oled("RESPONDIENDO")
+            hablar(resp)
+            esp32_comm.enviar_comando_oled("IDLE")
 
         threading.Thread(target=_run, daemon=True).start()
 

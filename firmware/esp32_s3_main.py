@@ -318,9 +318,7 @@ while True:
                 safe_flush()
 
         elif cmd.startswith("AUDIO_PLAY:"):
-            # ── SOLUCIÓN AL AUDIO ENTRECORTADO ──────────────────────────────
-            # Acumular TODOS los chunks en un buffer RAM antes de escribir al DMA.
-            # Un solo audio_out.write() garantiza flujo continuo sin underrun.
+            # Stream directo a DMA por chunks para evitar agotamiento de memoria RAM (heap) en MicroPython
             partes = cmd.split(":")
             total_bytes = int(partes[1]) if len(partes) >= 2 else 0
 
@@ -334,10 +332,8 @@ while True:
             sys.stdout.write("AUDIO_PLAY_READY\n")
             safe_flush()
 
-            # Asignar buffer en heap (puede ser grande, p.ej. 210 KB)
-            play_buf = bytearray(total_bytes)
-            pos = 0
-            while pos < total_bytes:
+            bytes_recibidos = 0
+            while bytes_recibidos < total_bytes:
                 line_b64 = sys.stdin.readline()
                 if not line_b64:
                     continue
@@ -346,19 +342,12 @@ while True:
                     break
                 try:
                     chunk = ubinascii.a2b_base64(s)
-                    end = min(pos + len(chunk), total_bytes)
-                    play_buf[pos:end] = chunk[:end - pos]
-                    pos = end
+                    if audio_out and len(chunk) > 0:
+                        audio_out.write(chunk)
+                        bytes_recibidos += len(chunk)
                 except Exception as ex_b64:
                     sys.stdout.write(f"[AUDIO_PLAY ERR] {ex_b64}\n")
                     safe_flush()
-
-            # Un único write al DMA → sin underrun → audio limpio
-            if audio_out and pos > 0:
-                audio_out.write(play_buf[:pos])
-                # Esperar que el DMA vacíe (dur_seg ≈ pos / (16000*2))
-                dur_wait = pos / (SAMPLE_RATE * 2) + 0.3
-                time.sleep(dur_wait)
 
             mostrar_idle()
             sys.stdout.write("AUDIO_PLAY_OK\n")

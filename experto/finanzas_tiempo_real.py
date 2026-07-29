@@ -202,3 +202,7 @@ def generar_respuesta_precio(ticker: str) -> tuple[str, list]:
     else:
         return f"Lo siento, no pude obtener los datos de mercado para '{ticker}'.", logs
 
+
+# Alias de compatibilidad
+obtener_datos_cripto = obtener_datos_accion
+

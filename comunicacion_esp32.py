@@ -1,6 +1,6 @@
 """
 Módulo de Comunicación PC <-> ESP32-S3 (Interfaz Física)
-Conexión exclusiva a COM5 con reintentos y trazabilidad transparente.
+Conexión serial a la PCB (COM11 por defecto) con reintentos y trazabilidad transparente.
 """
 import time
 import serial
@@ -10,7 +10,7 @@ import struct
 import numpy as np
 
 class ComunicacionESP32:
-    def __init__(self, puerto="COM5", baudrate=115200):
+    def __init__(self, puerto="COM11", baudrate=115200):
         self.puerto = puerto
         self.baudrate = baudrate
         self.serial_conn = None
@@ -39,10 +39,10 @@ class ComunicacionESP32:
     def obtener_puertos_disponibles(self):
         """Retorna una lista con los nombres de todos los puertos COM disponibles."""
         puertos = serial.tools.list_ports.comports()
-        return [p.device for p in puertos] if puertos else ["COM5"]
+        return [p.device for p in puertos] if puertos else ["COM11"]
 
-    def conectar(self, puerto="COM5"):
-        """Establece conexión serial exclusivamente en el puerto indicado (defecto COM5)."""
+    def conectar(self, puerto="COM11"):
+        """Establece conexión serial exclusivamente en el puerto indicado (defecto COM11)."""
         if puerto:
             self.puerto = puerto
 
@@ -249,9 +249,8 @@ class ComunicacionESP32:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
                 import base64
-                # Chunks grandes (4096 bytes) para minimizar overhead de overhead UART por round-trip
-                # El ESP32 acumula todo en RAM y hace un único write al DMA → sin underrun
-                chunk_size = 4096
+                # Chunks de 512 bytes con pacing para evitar desbordamiento del búfer FIFO UART del ESP32
+                chunk_size = 512
                 for idx in range(0, len(pcm_bytes), chunk_size):
                     if self.cancelar_flag:
                         self.serial_conn.write(b"STOP\n")
@@ -261,7 +260,7 @@ class ComunicacionESP32:
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
-                    # Sin sleep artificial: el ESP32 ya acumula en buffer RAM antes de reproducir
+                    time.sleep(0.005)
 
                 self.serial_conn.write(b"AUDIO_PLAY_END\n")
                 self.serial_conn.flush()

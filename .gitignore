@@ -6,3 +6,5 @@ modelo_vosk/
 .env
 .vscode/
 .trae/
+*.wav
+scratch/

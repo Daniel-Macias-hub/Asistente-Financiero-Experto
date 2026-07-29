@@ -8,8 +8,8 @@
 #include "esp_http_server.h"
 
 // Credenciales WiFi
-const char* ssid = "Router HUAWEI";
-const char* password = "3C0461FB9BAD";
+const char* ssid = "UNITEC_Academia";
+const char* password = "IT@unitec_2023";
 
 // Definición de pines AI-THINKER ESP32-CAM
 #define PWDN_GPIO_NUM     32
@@ -159,8 +159,20 @@ void startCameraServer() {
 
 void setup() {
     Serial.begin(115200);
+    delay(500);
+    Serial.println("\n--- INICIANDO ESP32-CAM ---");
+
     pinMode(FLASH_GPIO_NUM, OUTPUT);
     digitalWrite(FLASH_GPIO_NUM, LOW);
+
+    // Reset de encendido del sensor mediante PWDN
+    if (PWDN_GPIO_NUM != -1) {
+        pinMode(PWDN_GPIO_NUM, OUTPUT);
+        digitalWrite(PWDN_GPIO_NUM, HIGH);
+        delay(20);
+        digitalWrite(PWDN_GPIO_NUM, LOW);
+        delay(20);
+    }
 
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
@@ -191,28 +203,83 @@ void setup() {
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        Serial.printf("Error al iniciar camara: 0x%x", err);
-        return;
+        Serial.printf("Aviso 20MHz fail: 0x%x. Reintentando a 10MHz...\n", err);
+        config.xclk_freq_hz = 10000000;
+        err = esp_camera_init(&config);
     }
 
-    sensor_t * s = esp_camera_sensor_get();
-    if (s) {
-        s->set_vflip(s, 1);   // Giro vertical
-        s->set_hmirror(s, 1); // Espejo horizontal
+    if (err != ESP_OK) {
+        Serial.printf("Error final al iniciar camara: 0x%x\n", err);
+    } else {
+        sensor_t * s = esp_camera_sensor_get();
+        if (s) {
+            s->set_vflip(s, 1);   // Giro vertical
+            s->set_hmirror(s, 1); // Espejo horizontal
+        }
+        Serial.println("Sensor de Cámara iniciado OK!");
     }
 
+    // Iniciar WiFi independientemente para obtener la IP del módulo
+    Serial.printf("Conectando a WiFi '%s'...\n", ssid);
     WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
+    int retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 30) {
         delay(500);
         Serial.print(".");
+        retries++;
     }
-    Serial.println("\nWiFi Conectado!");
-    Serial.print("Servidor listo: http://");
-    Serial.println(WiFi.localIP());
 
-    startCameraServer();
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\n✅ WiFi Conectado!");
+        Serial.print("Servidor listo: http://");
+        Serial.println(WiFi.localIP());
+        Serial.print("CAM_IP:http://");
+        Serial.println(WiFi.localIP());
+        startCameraServer();
+    } else {
+        Serial.println("\n❌ No se pudo conectar al WiFi.");
+        Serial.println("CAM_IP:DISCONNECTED");
+    }
+}
+
+void send_serial_frame() {
+    digitalWrite(FLASH_GPIO_NUM, flash_led_encendido ? HIGH : LOW);
+    camera_fb_t * fb_old = esp_camera_fb_get();
+    if (fb_old) esp_camera_fb_return(fb_old);
+
+    camera_fb_t * fb = esp_camera_fb_get();
+    if (!fb) {
+        Serial.println("FRAME_ERR");
+        return;
+    }
+    Serial.printf("\n---FRAME_START---:%u\n", (unsigned int)fb->len);
+    Serial.write(fb->buf, fb->len);
+    Serial.println("\n---FRAME_END---");
+    esp_camera_fb_return(fb);
 }
 
 void loop() {
-    delay(1000);
+    if (Serial.available() > 0) {
+        String cmd = Serial.readStringUntil('\n');
+        cmd.trim();
+        if (cmd == "GET_IP" || cmd == "PING" || cmd == "CAM_IP" || cmd == "IP") {
+            if (WiFi.status() == WL_CONNECTED) {
+                Serial.print("CAM_IP:http://");
+                Serial.println(WiFi.localIP());
+            } else {
+                Serial.println("CAM_IP:DISCONNECTED");
+            }
+        } else if (cmd == "GET_FRAME" || cmd == "FRAME" || cmd == "SHOT") {
+            send_serial_frame();
+        } else if (cmd == "LED_ON") {
+            flash_led_encendido = true;
+            digitalWrite(FLASH_GPIO_NUM, HIGH);
+            Serial.println("LED_ON_OK");
+        } else if (cmd == "LED_OFF") {
+            flash_led_encendido = false;
+            digitalWrite(FLASH_GPIO_NUM, LOW);
+            Serial.println("LED_OFF_OK");
+        }
+    }
+    delay(20);
 }
