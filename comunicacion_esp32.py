@@ -36,28 +36,152 @@ class ComunicacionESP32:
                 self.callback_log(f"[STOP ERR] {e}")
         return True, "CANCELADO"
 
-    def obtener_puertos_disponibles(self):
-        """Retorna una lista con los nombres de todos los puertos COM disponibles."""
-        puertos = serial.tools.list_ports.comports()
-        return [p.device for p in puertos] if puertos else ["COM11"]
+    def es_puerto_bluetooth(self, p_info):
+        """Devuelve True si el puerto COM es un dispositivo serie por Bluetooth."""
+        desc = (p_info.description or "").lower()
+        hwid = (p_info.hwid or "").lower()
+        dev = (p_info.device or "").lower()
+        keywords_bt = ["bluetooth", "bthenum", "vínculo bluetooth", "vinculo bluetooth", "serie estándar sobre"]
+        return any(k in desc or k in hwid for k in keywords_bt)
 
-    def conectar(self, puerto="COM11"):
-        """Establece conexión serial exclusivamente en el puerto indicado (defecto COM11)."""
-        if puerto:
-            self.puerto = puerto
+    def obtener_puertos_disponibles(self, incluir_bluetooth=False):
+        """
+        Retorna una lista con los nombres de todos los puertos COM disponibles,
+        excluyendo por defecto los puertos virtuales Bluetooth y priorizando adaptadores USB-Serial (CH343, CH340, CP210x, etc.).
+        """
+        puertos = serial.tools.list_ports.comports()
+        if not puertos:
+            return ["COM11"]
+
+        usb_ports = []
+        otros_ports = []
+        for p in puertos:
+            if not incluir_bluetooth and self.es_puerto_bluetooth(p):
+                continue
+            desc = (p.description or "").upper()
+            hwid = (p.hwid or "").upper()
+            # Prioridad a chips USB-Serial conocidos
+            if any(k in desc or k in hwid for k in ["CH343", "CH340", "CP210", "FTDI", "USB", "ESP32", "SERIAL"]):
+                usb_ports.append(p.device)
+            else:
+                otros_ports.append(p.device)
+
+        resultado = usb_ports + otros_ports
+        return resultado if resultado else [p.device for p in puertos if incluir_bluetooth or not self.es_puerto_bluetooth(p)] or ["COM11"]
+
+    def autodetectar_puerto_esp32(self, puerto_excluir=None):
+        """
+        Escanea automáticamente todos los puertos USB serie físicos activos buscando responder PONG al PING.
+        Retorna (bool_exito, str_puerto_hallado).
+        """
+        if self.callback_log:
+            self.callback_log("[AUTO-DETECT] Buscando ESP32-S3 en los puertos USB serie disponibles...")
+
+        puertos_cand = serial.tools.list_ports.comports()
+        for p_info in puertos_cand:
+            p_dev = p_info.device
+            if puerto_excluir and p_dev == puerto_excluir:
+                continue
+            if self.es_puerto_bluetooth(p_info):
+                continue
+
+            if self.callback_log:
+                self.callback_log(f"[AUTO-DETECT] Probando puerto USB {p_dev} ({p_info.description})...")
+
+            try:
+                with serial.Serial(p_dev, self.baudrate, timeout=1.0) as s:
+                    time.sleep(0.4)
+                    s.reset_input_buffer()
+                    s.reset_output_buffer()
+                    s.write(b"PING\n")
+                    s.flush()
+
+                    t0 = time.time()
+                    confirmado = False
+                    repl_detectado = False
+                    while time.time() - t0 < 1.2:
+                        if s.in_waiting > 0:
+                            raw = s.readline()
+                            linea = raw.decode('utf-8', errors='ignore').strip()
+                            if "PONG" in linea or "READY" in linea:
+                                confirmado = True
+                                break
+                            elif ">>>" in linea or "NameError" in linea:
+                                repl_detectado = True
+                        time.sleep(0.04)
+
+                    if not confirmado and repl_detectado:
+                        s.write(b"\x04\nimport main\n")
+                        s.flush()
+                        time.sleep(0.8)
+                        s.write(b"PING\n")
+                        s.flush()
+                        t0 = time.time()
+                        while time.time() - t0 < 1.0:
+                            if s.in_waiting > 0:
+                                linea = s.readline().decode('utf-8', errors='ignore').strip()
+                                if "PONG" in linea or "READY" in linea:
+                                    confirmado = True
+                                    break
+                            time.sleep(0.04)
+
+                    if confirmado:
+                        if self.callback_log:
+                            self.callback_log(f"[AUTO-DETECT] ¡ESP32-S3 respondio PONG en {p_dev}!")
+                        return True, p_dev
+            except Exception as e:
+                pass
+
+        if self.callback_log:
+            self.callback_log("[AUTO-DETECT] No se detectó respuesta PONG en ningún puerto USB serie.")
+        return False, None
+
+    def conectar(self, puerto=None):
+        """
+        Establece conexión serial. Si el puerto indicado es Bluetooth o falla,
+        activa automáticamente la detección de puertos USB.
+        """
+        # Si se solicita AUTO o puerto no especificado
+        if not puerto or puerto == "AUTO":
+            ok_auto, p_auto = self.autodetectar_puerto_esp32()
+            if ok_auto:
+                puerto = p_auto
+            else:
+                puerto = self.obtener_puertos_disponibles()[0]
+
+        # Verificar si el puerto solicitado es Bluetooth
+        puertos_all = serial.tools.list_ports.comports()
+        es_bt = False
+        for p_info in puertos_all:
+            if p_info.device == puerto and self.es_puerto_bluetooth(p_info):
+                es_bt = True
+                break
+
+        if es_bt:
+            if self.callback_log:
+                self.callback_log(f"[COM ADVERTENCIA] {puerto} es un puerto Bluetooth (no USB). Redirigiendo a auto-detección USB...")
+            ok_auto, p_auto = self.autodetectar_puerto_esp32()
+            if ok_auto:
+                puerto = p_auto
+            else:
+                disps = self.obtener_puertos_disponibles()
+                if disps and disps[0] != puerto:
+                    puerto = disps[0]
+
+        self.puerto = puerto
 
         with self.lock:
             try:
                 if self.serial_conn and self.serial_conn.is_open:
                     self.serial_conn.close()
 
-                # 1. Abrir puerto con timeout adecuado (3 segundos)
-                self.serial_conn = serial.Serial(self.puerto, self.baudrate, timeout=3)
+                # 1. Abrir puerto con timeout adecuado (1.5 segundos)
+                self.serial_conn = serial.Serial(self.puerto, self.baudrate, timeout=1.5)
 
-                # 2. Retardo de inicialización de 800 ms tras abrir el puerto serie
-                time.sleep(0.8)
+                # 2. Retardo de inicialización de 600 ms tras abrir el puerto serie
+                time.sleep(0.6)
 
-                # 3. Leer y consumir cualquier mensaje de arranque (READY, [BOOT], [FIRMWARE])
+                # 3. Leer y consumir cualquier mensaje de arranque
                 boot_bytes = b""
                 if self.serial_conn.in_waiting > 0:
                     boot_bytes = self.serial_conn.read_all()
@@ -68,44 +192,42 @@ class ComunicacionESP32:
                 self.serial_conn.reset_input_buffer()
                 self.serial_conn.reset_output_buffer()
 
-                # 5. Enviar PING estrictamente terminado en \n y verificar PONG
+                # 5. Enviar PING y verificar PONG con timeout optimizado
                 confirmado = False
-                for intento in range(3):
+                for intento in range(2):
                     cmd_bytes = b"PING\n"
                     if self.callback_log:
-                        self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
-                    
+                        self.callback_log(f"TX -> {repr(cmd_bytes)}")
+
                     self.serial_conn.write(cmd_bytes)
                     self.serial_conn.flush()
 
                     t0 = time.time()
-                    resp_acumulada = ""
                     repl_detectado = False
-                    while time.time() - t0 < 3.0:
+                    while time.time() - t0 < 1.2:
                         if self.serial_conn.in_waiting > 0:
                             raw_line = self.serial_conn.readline()
                             line_str = raw_line.decode('utf-8', errors='ignore').strip()
                             if self.callback_log:
-                                self.callback_log(f"RX ◄ {repr(raw_line)} -> '{line_str}'")
-                            
+                                self.callback_log(f"RX <- {repr(raw_line)} -> '{line_str}'")
+
                             if "PONG" in line_str or "READY" in line_str:
                                 confirmado = True
                                 break
                             elif ">>>" in line_str or "NameError" in line_str:
                                 repl_detectado = True
-                        time.sleep(0.05)
+                        time.sleep(0.04)
 
                     if confirmado:
                         break
                     elif repl_detectado:
                         if self.callback_log:
-                            self.callback_log("[COM REPL] MicroPython en consola '>>> '. Enviando Ctrl+D (Soft Reset) para ejecutar main.py...")
-                        # Enviar Ctrl+D (Soft Reset) para forzar la ejecución de main.py
+                            self.callback_log("[COM REPL] MicroPython en consola '>>> '. Enviando Ctrl+D (Soft Reset)...")
                         self.serial_conn.write(b"\x04\nimport main\n")
                         self.serial_conn.flush()
-                        time.sleep(1.0)
+                        time.sleep(0.8)
                     else:
-                        time.sleep(0.3)
+                        time.sleep(0.2)
 
                 if confirmado:
                     self.conectado = True
@@ -115,19 +237,47 @@ class ComunicacionESP32:
                 else:
                     self.conectado = False
                     if self.callback_log:
-                        self.callback_log(f"[COM ERROR] {self.puerto} abrió pero no respondió PONG tras PING.")
+                        self.callback_log(f"[COM ERROR] {self.puerto} no respondió PONG tras PING.")
+
+                    # Intento final de rescate: auto-detectar si otro puerto USB responde
+                    if self.callback_log:
+                        self.callback_log("[COM RESCATE] Intentando autodetectar el ESP32-S3 en otros puertos...")
+                    ok_res, p_res = self.autodetectar_puerto_esp32(puerto_excluir=self.puerto)
+                    if ok_res:
+                        self.serial_conn.close()
+                        self.serial_conn = serial.Serial(p_res, self.baudrate, timeout=1.5)
+                        self.puerto = p_res
+                        self.conectado = True
+                        if self.callback_log:
+                            self.callback_log(f"[COM RESCATE] ¡Conectado exitosamente en puerto rescatado {p_res}!")
+                        return True, p_res
+
                     return False, self.puerto
 
             except serial.SerialException as se:
                 self.conectado = False
                 msg = str(se)
                 if "PermissionError" in msg or "Access is denied" in msg:
-                    err_hint = f"[COM ERROR] El puerto {self.puerto} está ocupado por Thonny IDE. Presiona 'Stop' o cierra Thonny."
+                    err_hint = f"[COM ERROR] El puerto {self.puerto} está ocupado por Thonny IDE. Cierra Thonny o detén la ejecución."
                 else:
                     err_hint = f"[COM ERROR] No se pudo abrir {self.puerto}: {se}"
 
                 if self.callback_log:
                     self.callback_log(err_hint)
+
+                # Intentar rescate si el puerto dio error (ej. Bluetooth o puerto erróneo)
+                ok_res, p_res = self.autodetectar_puerto_esp32(puerto_excluir=self.puerto)
+                if ok_res:
+                    try:
+                        self.serial_conn = serial.Serial(p_res, self.baudrate, timeout=1.5)
+                        self.puerto = p_res
+                        self.conectado = True
+                        if self.callback_log:
+                            self.callback_log(f"[COM RESCATE] ¡Conectado exitosamente en puerto rescatado {p_res}!")
+                        return True, p_res
+                    except Exception:
+                        pass
+
                 return False, self.puerto
             except Exception as e:
                 self.conectado = False
@@ -159,7 +309,7 @@ class ComunicacionESP32:
                 self.serial_conn.write(cmd_bytes)
                 self.serial_conn.flush()
                 if self.callback_log:
-                    self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
+                    self.callback_log(f"TX -> {repr(cmd_bytes)}")
                 return True
             except Exception as e:
                 if self.callback_log:
@@ -176,7 +326,7 @@ class ComunicacionESP32:
                 self.serial_conn.reset_input_buffer()
                 cmd_bytes = b"OLED_TEST\n"
                 if self.callback_log:
-                    self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
+                    self.callback_log(f"TX -> {repr(cmd_bytes)}")
                 self.serial_conn.write(cmd_bytes)
                 self.serial_conn.flush()
 
@@ -186,7 +336,7 @@ class ComunicacionESP32:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
-                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                            self.callback_log(f"RX <- {repr(raw_line)} -> '{linea}'")
                         if "OLED_TEST_OK" in linea:
                             return True, "OLED_TEST_OK"
                     time.sleep(0.05)
@@ -205,7 +355,7 @@ class ComunicacionESP32:
                 self.serial_conn.reset_input_buffer()
                 cmd_bytes = b"AUDIO_TEST\n"
                 if self.callback_log:
-                    self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
+                    self.callback_log(f"TX -> {repr(cmd_bytes)}")
                 self.serial_conn.write(cmd_bytes)
                 self.serial_conn.flush()
 
@@ -215,7 +365,7 @@ class ComunicacionESP32:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
-                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                            self.callback_log(f"RX <- {repr(raw_line)} -> '{linea}'")
                         if "AUDIO_TEST_OK" in linea:
                             return True, "AUDIO_TEST_OK"
                     time.sleep(0.05)
@@ -236,7 +386,7 @@ class ComunicacionESP32:
                 cmd_str = f"AUDIO_PLAY:{len(pcm_bytes)}\n"
                 cmd_bytes = cmd_str.encode('utf-8')
                 if self.callback_log:
-                    self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
+                    self.callback_log(f"TX -> {repr(cmd_bytes)}")
                 self.serial_conn.write(cmd_bytes)
                 self.serial_conn.flush()
 
@@ -249,7 +399,7 @@ class ComunicacionESP32:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
-                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                            self.callback_log(f"RX <- {repr(raw_line)} -> '{linea}'")
                         if "AUDIO_PLAY_READY" in linea:
                             ready = True
                             break
@@ -259,8 +409,8 @@ class ComunicacionESP32:
                     return False, "TIMEOUT AUDIO_PLAY_READY"
 
                 import base64
-                # Chunks de 512 bytes con pacing para evitar desbordamiento del búfer FIFO UART del ESP32
-                chunk_size = 512
+                # Transmisión fluida Base64 en bloques de 1024 bytes (32ms por bloque)
+                chunk_size = 1024
                 for idx in range(0, len(pcm_bytes), chunk_size):
                     if self.cancelar_flag:
                         self.serial_conn.write(b"STOP\n")
@@ -270,12 +420,12 @@ class ComunicacionESP32:
                     b64_str = base64.b64encode(chunk).decode('utf-8')
                     self.serial_conn.write(f"{b64_str}\n".encode('utf-8'))
                     self.serial_conn.flush()
-                    time.sleep(0.005)
+                    time.sleep(0.002)
 
                 self.serial_conn.write(b"AUDIO_PLAY_END\n")
                 self.serial_conn.flush()
 
-                # Esperar AUDIO_PLAY_OK — timeout = tamaño del audio + 5 segundos de margen
+                # Esperar AUDIO_PLAY_OK — timeout = tamaño del audio + 5 segundos de margen (16000 Hz 16-bit mono = 32000 bytes/sec)
                 dur_audio_sec = len(pcm_bytes) / (16000 * 2)
                 timeout_ok = dur_audio_sec + 5.0
                 t_ok = time.time()
@@ -286,7 +436,7 @@ class ComunicacionESP32:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
-                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                            self.callback_log(f"RX <- {repr(raw_line)} -> '{linea}'")
                         if "AUDIO_PLAY_OK" in linea:
                             break
                     time.sleep(0.05)
@@ -306,7 +456,7 @@ class ComunicacionESP32:
                 self.serial_conn.reset_input_buffer()
                 cmd_bytes = b"MIC_TEST\n"
                 if self.callback_log:
-                    self.callback_log(f"TX ➔ {repr(cmd_bytes)}")
+                    self.callback_log(f"TX -> {repr(cmd_bytes)}")
                 self.serial_conn.write(cmd_bytes)
                 self.serial_conn.flush()
 
@@ -321,7 +471,7 @@ class ComunicacionESP32:
                         raw_line = self.serial_conn.readline()
                         linea = raw_line.decode('utf-8', errors='ignore').strip()
                         if self.callback_log and raw_line:
-                            self.callback_log(f"RX ◄ {repr(raw_line)} -> '{linea}'")
+                            self.callback_log(f"RX <- {repr(raw_line)} -> '{linea}'")
                         # Parsear métricas reales del firmware: [STEP 5.1] ... RMS=XXXX.XX
                         if "[STEP 5.1]" in linea and "RMS=" in linea:
                             try:

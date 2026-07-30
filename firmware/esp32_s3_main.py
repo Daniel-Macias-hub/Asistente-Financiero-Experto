@@ -78,8 +78,8 @@ except Exception as e_mic:
 audio_out = None
 try:
     audio_out = I2S(1, sck=Pin(I2S_SPK_SCK), ws=Pin(I2S_SPK_WS), sd=Pin(I2S_SPK_SD),
-                    mode=I2S.TX, bits=16, format=I2S.MONO, rate=SAMPLE_RATE, ibuf=4096)
-    sys.stdout.write(f"[I2S TX OK] rate={SAMPLE_RATE}, bits=16, ibuf=4096\n")
+                    mode=I2S.TX, bits=16, format=I2S.MONO, rate=SAMPLE_RATE, ibuf=8192)
+    sys.stdout.write(f"[I2S TX OK] rate={SAMPLE_RATE}, bits=16, ibuf=8192\n")
     safe_flush()
 except Exception as e_spk:
     sys.stdout.write(f"[I2S TX ERR] {e_spk}\n")
@@ -436,9 +436,6 @@ while True:
 
         elif cmd.startswith("AUDIO_PLAY:"):
             gc.collect()
-            partes = cmd.split(":")
-            total_bytes = int(partes[1]) if len(partes) >= 2 else 0
-
             if oled:
                 try:
                     oled.fill(0)
@@ -452,12 +449,8 @@ while True:
             sys.stdout.write("AUDIO_PLAY_READY\n")
             safe_flush()
 
-            # Fragmentación en bloques estáticos de 2KB para 0 MemoryError
-            play_chunks = [bytearray(min(2048, total_bytes - i)) for i in range(0, total_bytes, 2048)]
-            c_idx = 0
-            c_off = 0
-
-            while c_idx < len(play_chunks):
+            # Transmisión en tiempo real (streaming) directamente al amplificador I2S
+            while True:
                 line_b64 = sys.stdin.readline()
                 if not line_b64:
                     continue
@@ -466,29 +459,11 @@ while True:
                     break
                 try:
                     chunk = ubinascii.a2b_base64(s)
-                    target = play_chunks[c_idx]
-                    rem = len(target) - c_off
-                    if len(chunk) <= rem:
-                        target[c_off:c_off+len(chunk)] = chunk
-                        c_off += len(chunk)
-                    else:
-                        target[c_off:] = chunk[:rem]
-                        c_idx += 1
-                        c_off = len(chunk) - rem
-                        if c_idx < len(play_chunks):
-                            play_chunks[c_idx][:c_off] = chunk[rem:]
-                    if c_off >= len(play_chunks[c_idx]):
-                        c_idx += 1
-                        c_off = 0
+                    if audio_out and len(chunk) > 0:
+                        audio_out.write(chunk)
                 except Exception as ex_b64:
                     sys.stdout.write(f"[AUDIO_PLAY ERR] {ex_b64}\n")
                     safe_flush()
-
-            if audio_out:
-                for p_chunk in play_chunks:
-                    audio_out.write(p_chunk)
-                dur_wait = total_bytes / (SAMPLE_RATE * 2) + 0.3
-                time.sleep(dur_wait)
 
             mostrar_idle()
             gc.collect()

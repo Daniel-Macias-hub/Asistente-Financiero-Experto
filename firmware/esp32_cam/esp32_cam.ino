@@ -313,6 +313,19 @@ void setup() {
             delay(500);
             Serial.print(".");
             retries++;
+            if (Serial.available() > 0) {
+                String cmd = Serial.readStringUntil('\n');
+                cmd.trim();
+                if (cmd.startsWith("SET_WIFI:")) {
+                    int idx1 = cmd.indexOf(':');
+                    int idx2 = cmd.indexOf(':', idx1 + 1);
+                    if (idx1 != -1 && idx2 != -1) {
+                        String new_s = cmd.substring(idx1 + 1, idx2);
+                        String new_p = cmd.substring(idx2 + 1);
+                        guardar_y_conectar_wifi(new_s, new_p);
+                    }
+                }
+            }
         }
         if (WiFi.status() == WL_CONNECTED) {
             Serial.println("\n✅ Wi-Fi Conectado!");

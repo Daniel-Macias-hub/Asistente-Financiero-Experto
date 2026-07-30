@@ -8,78 +8,112 @@ import requests
 import serial
 import serial.tools.list_ports
 
-def enviar_configuracion_wifi_serial(ssid, password, puerto=None, puerto_excluir=None, timeout=6.0):
+def es_puerto_bluetooth_cam(p_info):
+    """Devuelve True si el puerto es un enlace serie por Bluetooth."""
+    desc = (p_info.description or "").lower()
+    hwid = (p_info.hwid or "").lower()
+    return any(k in desc or k in hwid for k in ["bluetooth", "bthenum", "vínculo bluetooth", "vinculo bluetooth", "serie estándar sobre"])
+
+def enviar_configuracion_wifi_serial(ssid, password, puerto=None, puerto_excluir=None, timeout=14.0):
     """
     Envía credenciales Wi-Fi (SSID y Password) a la ESP32-CAM por el puerto serie indicado (SET_WIFI:ssid:pass).
-    Si el puerto no es especificado o falla, escanea automáticamente todos los puertos serie disponibles (excluyendo el del ESP32-S3).
+    Espera a que el dispositivo guarde en NVS, se reinicie y reporte la IP obtenida por Wi-Fi.
     
     Returns:
-        tuple (bool_exito, str_mensaje_ip)
+        tuple (bool_exito, str_mensaje_o_ip)
     """
     if not ssid:
         return False, "SSID no puede estar vacío"
+
+    # Cerrar cualquier gestor serial activo antes de reprogramar para evitar PermissionError
+    try:
+        camara_serial_mgr.cerrar()
+    except Exception:
+        pass
+
+    # Advertencia anticipada si la red es 5G
+    es_5g = any(tag in ssid.upper() for tag in ["5G", "5GHZ", "-5G", "_5G"])
 
     puertos_a_probar = []
     if puerto and puerto != puerto_excluir:
         puertos_a_probar.append(puerto)
     
-    # Agregar los demás puertos COM disponibles a la lista de intentos
-    puertos_sys = [p.device for p in serial.tools.list_ports.comports() if p.device != puerto_excluir]
-    for p in puertos_sys:
-        if p not in puertos_a_probar:
-            puertos_a_probar.append(p)
+    # Obtener puertos COM excluyendo el del S3 y los puertos Bluetooth
+    for p_info in serial.tools.list_ports.comports():
+        if p_info.device == puerto_excluir or es_puerto_bluetooth_cam(p_info):
+            continue
+        if p_info.device not in puertos_a_probar:
+            puertos_a_probar.append(p_info.device)
 
     if not puertos_a_probar:
-        return False, "No se encontraron puertos serie para la cámara"
+        return False, "No se encontraron puertos USB serie para la cámara"
 
     ultimo_err = "No se pudo conectar a la cámara por Serial"
     for p_try in puertos_a_probar:
         try:
-            s = serial.Serial(p_try, 115200, timeout=2.0)
+            s = serial.Serial(p_try, 115200, timeout=1.5)
             s.dtr = False
             s.rts = False
-            # Esperar a que la ESP32-CAM complete la secuencia de arranque tras abrir el puerto (1.5s)
-            time.sleep(1.5)
+            time.sleep(0.6)
             s.reset_input_buffer()
             s.reset_output_buffer()
 
             cmd = f"SET_WIFI:{ssid.strip()}:{password.strip()}\n"
             cmd_bytes = cmd.encode('utf-8')
 
-            # Enviar comando en reintentos por si la placa recién terminó de arrancar
             ok_recibido = False
             ip_hallada = None
-            inicio = time.time()
+            ap_fallback = False
 
-            for _attempt in range(3):
-                s.write(cmd_bytes)
-                s.flush()
-                time.sleep(0.3)
-                if s.in_waiting > 0:
-                    break
+            # Enviar continuamente comando SET_WIFI hasta que la cámara responda SET_WIFI_OK o la IP
+            t0 = time.time()
+            t_last_send = 0
+            while time.time() - t0 < timeout:
+                if not ok_recibido and (time.time() - t_last_send > 0.4):
+                    try:
+                        s.write(cmd_bytes)
+                        s.flush()
+                    except Exception:
+                        pass
+                    t_last_send = time.time()
 
-            while time.time() - inicio < timeout:
                 if s.in_waiting > 0:
                     linea = s.readline().decode('utf-8', errors='ignore').strip()
                     if "SET_WIFI_OK" in linea:
                         ok_recibido = True
-                    if "CAM_IP:http://" in linea:
+                    if "CAM_IP:http://" in linea and "192.168.4.1" not in linea:
                         ip_hallada = linea.split("CAM_IP:")[1].strip()
                         break
                     elif "Servidor listo: http://" in linea:
                         ip_hallada = linea.split("Servidor listo: ")[1].strip()
                         break
-                time.sleep(0.05)
+                    elif "CAM_IP:AP_MODE" in linea or "192.168.4.1" in linea or "No se pudo conectar" in linea:
+                        ap_fallback = True
+                        break
+                time.sleep(0.04)
 
             s.close()
-            if ok_recibido or ip_hallada:
-                return True, ip_hallada or f"Configuración enviada correctamente en {p_try}. Reiniciando cámara..."
+
+            if ip_hallada:
+                return True, ip_hallada
+            elif ap_fallback or (ok_recibido and es_5g):
+                err_msg = f"No se pudo conectar a '{ssid}'. Nota: La ESP32-CAM requiere Wi-Fi 2.4 GHz (las redes 5G no son compatibles)."
+                return False, err_msg
+            elif ok_recibido:
+                return True, f"Configuración guardada en {p_try}. La cámara se está reiniciando..."
+
+        except serial.SerialException as se:
+            msg_str = str(se)
+            if "PermissionError" in msg_str or "Access is denied" in msg_str or "Acceso denegado" in msg_str or "13" in msg_str:
+                ultimo_err = f"El puerto {p_try} está ocupado por otro programa (ej: Thonny IDE, Monitor Serie o Vista Previa). Cierra Thonny para continuar."
+            else:
+                ultimo_err = f"Error en puerto {p_try}: {se}"
         except Exception as e:
             ultimo_err = f"Error en puerto {p_try}: {e}"
 
     return False, ultimo_err
 
-def obtener_ip_camara_por_serial(puerto="COM3", timeout=2.5):
+def obtener_ip_camara_por_serial(puerto="COM14", timeout=2.5):
     """
     Se conecta al puerto serie de la ESP32-CAM y le solicita su dirección IP.
     
@@ -101,13 +135,13 @@ def obtener_ip_camara_por_serial(puerto="COM3", timeout=2.5):
         while time.time() - inicio < timeout:
             if s.in_waiting > 0:
                 linea = s.readline().decode('utf-8', errors='ignore').strip()
-                if "CAM_IP:http://" in linea:
+                if "CAM_IP:http://" in linea and "192.168.4.1" not in linea:
                     ip_hallada = linea.split("CAM_IP:")[1].strip()
                     break
                 elif "Servidor listo: http://" in linea:
                     ip_hallada = linea.split("Servidor listo: ")[1].strip()
                     break
-                elif "http://172." in linea or "http://192." in linea or "http://10." in linea or "http://192.168.4.1" in linea:
+                elif ("http://172." in linea or "http://192." in linea or "http://10." in linea) and "192.168.4.1" not in linea:
                     parts = linea.split("http://")
                     if len(parts) > 1:
                         ip_clean = parts[1].split()[0].split("/")[0]
@@ -122,14 +156,14 @@ def obtener_ip_camara_por_serial(puerto="COM3", timeout=2.5):
 
 def autodetectar_ip_camara(puerto_s3=None):
     """
-    Escanea todos los puertos COM disponibles (excluyendo el del ESP32-S3 si fue indicado)
+    Escanea todos los puertos COM disponibles (excluyendo el del ESP32-S3 y Bluetooth)
     para localizar automáticamente la IP de la ESP32-CAM.
     
     Returns:
         tuple (ip_url, puerto_camara) o (None, None)
     """
-    puertos = serial.tools.list_ports.comports()
-    disponibles = [p.device for p in puertos if p.device != puerto_s3]
+    puertos_cand = serial.tools.list_ports.comports()
+    disponibles = [p.device for p in puertos_cand if p.device != puerto_s3 and not es_puerto_bluetooth_cam(p)]
 
     for port in disponibles:
         ip, p_ok = obtener_ip_camara_por_serial(port, timeout=1.8)

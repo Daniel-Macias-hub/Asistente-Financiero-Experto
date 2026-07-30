@@ -67,6 +67,10 @@ class AsistenteApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Asistente Experto Financiero — Dashboard de Operaciones")
+        try:
+            self.root.state('zoomed')  # Abrir automáticamente en Pantalla Completa (Maximizada)
+        except Exception:
+            pass
         self.root.geometry("1280x850")
         self.root.minsize(1024, 720)
         self.root.configure(bg=BG_MAIN)
@@ -336,11 +340,12 @@ class AsistenteApp:
         self.root.after(0, _append)
 
     def actualizar_lista_puertos(self):
-        puertos = esp32_comm.obtener_puertos_disponibles()
+        puertos = esp32_comm.obtener_puertos_disponibles(incluir_bluetooth=False)
         self.combo_puertos['values'] = puertos
         
-        # Excluir puertos de la cámara (COM14, COM4)
-        puertos_s3 = [p for p in puertos if p not in ("COM14", "COM4")]
+        # Excluir el puerto COM asignado a la ESP32-CAM (ej. COM14)
+        ip_cam = getattr(self, 'entry_ip_cam', None)
+        puertos_s3 = [p for p in puertos if p != "COM14"]
         
         if "COM11" in puertos:
             self.combo_puertos.set("COM11")
@@ -351,26 +356,14 @@ class AsistenteApp:
         elif puertos:
             self.combo_puertos.current(0)
             
-        self.agregar_log_consola(f"[PUERTOS] Lista de puertos del sistema actualizada: {puertos}")
+        self.agregar_log_consola(f"[PUERTOS] Puertos USB serie activos detectados: {puertos}")
 
     def conectar_esp32_dinamico(self):
         puerto_sel = self.combo_puertos.get()
 
         def _run():
-            self.agregar_log_consola(f"[CONEXIÓN] Intentando conectar a {puerto_sel} (ESP32-S3 PCB)...")
-            exito, puerto_ok = esp32_comm.conectar(puerto_sel)
-            
-            # Si el puerto seleccionado falló, probar automáticamente todos los demás puertos disponibles excepto los de cámara
-            if not exito:
-                puertos_disp = esp32_comm.obtener_puertos_disponibles()
-                for p_alt in puertos_disp:
-                    if p_alt != puerto_sel and p_alt not in ("COM14", "COM4"):
-                        self.agregar_log_consola(f"[AUTO-BUSQUEDA] Probando puerto alternativo {p_alt}...")
-                        exito_alt, puerto_ok_alt = esp32_comm.conectar(p_alt)
-                        if exito_alt:
-                            exito = True
-                            puerto_ok = puerto_ok_alt
-                            break
+            self.agregar_log_consola(f"[CONEXIÓN] Autodetectando e intentando conectar a {puerto_sel or 'USB'}...")
+            exito, puerto_ok = esp32_comm.conectar(puerto_sel if puerto_sel else "AUTO")
 
             if exito and puerto_ok:
                 def _gui_ok():
@@ -384,13 +377,13 @@ class AsistenteApp:
                         self.mtr_estado.configure(text=" CONECTADO", fg=CLR_GREEN)
                 self.root.after(0, _gui_ok)
                 esp32_comm.enviar_comando_oled("IDLE")
-                self.agregar_log_consola(f"[CONEXIÓN] ✓ Conexión física verificada en {puerto_ok}.")
+                self.agregar_log_consola(f"[CONEXIÓN] ✓ Conexión física verificada exitosamente en {puerto_ok}.")
             else:
                 def _gui_fail():
                     self.lbl_status_esp32.configure(text="Estado: 🔴 DESCONECTADO", foreground=CLR_RED)
                     self.lbl_ind_esp.configure(text="🔴 ESP32-S3", foreground=CLR_RED)
                 self.root.after(0, _gui_fail)
-                self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por otro programa o Thonny, desconecta y vuelve a conectar el cable USB del ESP32-S3.")
+                self.agregar_log_consola("[CONEXIÓN HINT] Si el puerto está retenido por Thonny IDE, cierra Thonny o detén la ejecución en Thonny.")
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -432,21 +425,21 @@ class AsistenteApp:
         """Abre un modal para configurar dinámicamente las credenciales Wi-Fi de la ESP32-CAM por Serial."""
         win_wifi = tk.Toplevel(self.root)
         win_wifi.title("⚙️ Configuración Wi-Fi de ESP32-CAM")
-        win_wifi.geometry("440x300")
+        win_wifi.geometry("480x360")
         win_wifi.configure(bg=BG_CARD)
         win_wifi.transient(self.root)
 
         tk.Label(win_wifi, text="⚙️ Configurar Red Wi-Fi (ESP32-CAM)",
-                 font=FONT_CARD, fg=CLR_GREEN, bg=BG_CARD).pack(pady=(15, 5))
-        tk.Label(win_wifi, text="Envía el SSID y contraseña a la memoria flash NVS vía Serial USB.",
-                 font=FONT_SMALL, fg=TEXT_MUTED, bg=BG_CARD).pack(pady=(0, 10))
+                 font=FONT_CARD, fg=CLR_GREEN, bg=BG_CARD).pack(pady=(15, 2))
+        tk.Label(win_wifi, text="Envía el SSID y contraseña a la memoria flash NVS vía Serial USB.\n⚠️ ESP32-CAM requiere red Wi-Fi de 2.4 GHz (las redes 5G no son compatibles).",
+                 font=FONT_SMALL, fg=TEXT_MUTED, bg=BG_CARD, justify='center').pack(pady=(0, 8))
 
         frm = tk.Frame(win_wifi, bg=BG_CARD)
         frm.pack(padx=20, pady=5, fill='x')
 
-        # Selección dinámica de Puerto COM para la Cámara
+        # Selección dinámica de Puerto COM para la Cámara (excluyendo Bluetooth)
         tk.Label(frm, text="Puerto COM Cámara:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=0, column=0, sticky='w', pady=4)
-        puertos_sys = esp32_comm.obtener_puertos_disponibles()
+        puertos_sys = esp32_comm.obtener_puertos_disponibles(incluir_bluetooth=False)
         combo_port_cam = ttk.Combobox(frm, values=puertos_sys, width=22)
         combo_port_cam.grid(row=0, column=1, pady=4)
         if puertos_sys:
@@ -456,22 +449,63 @@ class AsistenteApp:
 
         tk.Label(frm, text="Nombre Red (SSID):", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=1, column=0, sticky='w', pady=4)
         entry_ssid = ttk.Entry(frm, width=24)
-        entry_ssid.insert(0, "Router HUAWEI")
+        entry_ssid.insert(0, "IZZI-26C4")
         entry_ssid.grid(row=1, column=1, pady=4)
 
         tk.Label(frm, text="Contraseña:", font=FONT_BODY, fg=TEXT_MAIN, bg=BG_CARD).grid(row=2, column=0, sticky='w', pady=4)
         entry_pass = ttk.Entry(frm, width=24, show="*")
-        entry_pass.insert(0, "3C0461FB9BAD")
         entry_pass.grid(row=2, column=1, pady=4)
 
-        lbl_res = tk.Label(win_wifi, text="", font=FONT_SMALL, fg=CLR_CYAN, bg=BG_CARD, wraplength=380)
-        lbl_res.pack(pady=5)
+        lbl_5g_warn = tk.Label(win_wifi, text="", font=("Segoe UI", 9, "bold"), fg=CLR_AMBER, bg=BG_CARD, wraplength=440)
+        lbl_5g_warn.pack(pady=2)
+
+        def _on_ssid_change(*args):
+            val = entry_ssid.get().strip().upper()
+            if "5G" in val or "5GHZ" in val:
+                lbl_5g_warn.configure(text="⚠️ Advertencia: Red '5G' detectada. Las placas ESP32 solo soportan redes 2.4 GHz.")
+            else:
+                lbl_5g_warn.configure(text="")
+
+        entry_ssid.bind("<KeyRelease>", _on_ssid_change)
+
+        lbl_res = tk.Label(win_wifi, text="", font=FONT_SMALL, fg=CLR_CYAN, bg=BG_CARD, wraplength=440)
+        lbl_res.pack(pady=4)
+
+        # Botón dinámico para copiar IP al portapapeles
+        self._ip_obtenida_modal = ""
+
+        def _copiar_ip_modal():
+            target_ip = self._ip_obtenida_modal or (self.entry_ip_cam.get().strip() if hasattr(self, 'entry_ip_cam') else "")
+            if target_ip:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(target_ip)
+                lbl_res.configure(text=f"📋 IP '{target_ip}' copiada al portapapeles!", fg=CLR_GREEN)
+                self.agregar_log_consola(f"[CÁMARA] 📋 IP '{target_ip}' copiada al portapapeles.")
+
+        btn_copiar_modal = tk.Button(win_wifi, text="📋 Copiar Enlace al Portapapeles", command=_copiar_ip_modal,
+                                     bg="#1A2740", fg=CLR_CYAN, font=("Segoe UI", 9, "bold"), bd=1, relief="solid", cursor="hand2", padx=8, pady=4)
 
         def _enviar():
             s = entry_ssid.get().strip()
             p = entry_pass.get().strip()
             p_com = combo_port_cam.get().strip() or None
-            lbl_res.configure(text=f"Enviando por Serial USB ({p_com or 'Auto'})...", fg=CLR_AMBER)
+            btn_copiar_modal.pack_forget()
+            
+            # Detener streaming si está activo y cerrar gestor serial para liberar COM14
+            if getattr(self, 'stream_activo', False):
+                self.stream_activo = False
+                self.agregar_log_consola("[CÁMARA] 🛑 Pausando video en vivo para liberar el puerto COM...")
+            try:
+                from comunicacion_camara import camara_serial_mgr
+                camara_serial_mgr.cerrar()
+            except Exception:
+                pass
+
+            if "5G" in s.upper() or "5GHZ" in s.upper():
+                lbl_res.configure(text="⚠️ Advertencia: '5G' ingresado. ESP32 sólo soporta Wi-Fi 2.4 GHz.", fg=CLR_AMBER)
+            else:
+                lbl_res.configure(text=f"Enviando credenciales por {p_com or 'USB'}... Esperando reinicio de cámara...", fg=CLR_AMBER)
+
             def _task():
                 from comunicacion_camara import enviar_configuracion_wifi_serial
                 p_ex = self.combo_puertos.get()
@@ -479,23 +513,33 @@ class AsistenteApp:
                 def _gui():
                     if ok:
                         lbl_res.configure(text=f"✔ {msg}", fg=CLR_GREEN)
-                        self.agregar_log_consola(f"[CÁMARA] ✓ Credenciales Wi-Fi enviadas por Serial: SSID='{s}'. {msg}")
+                        self.agregar_log_consola(f"[CÁMARA] ✓ Credenciales Wi-Fi guardadas: SSID='{s}'. {msg}")
                         if "http://" in msg:
                             try:
                                 ip_ext = "http://" + msg.split("http://")[1].split()[0]
+                                self._ip_obtenida_modal = ip_ext
+                                
+                                # 1. Auto-copiar al portapapeles
+                                self.root.clipboard_clear()
+                                self.root.clipboard_append(ip_ext)
+                                
+                                # 2. Cambiar automáticamente la IP en el Dashboard
                                 self.entry_ip_cam.delete(0, tk.END)
                                 self.entry_ip_cam.insert(0, ip_ext)
-                                self.agregar_log_consola(f"[CÁMARA] 📋 IP actualizada automáticamente en Dashboard: {ip_ext}")
+                                self.agregar_log_consola(f"[CÁMARA] 📋 IP actualizada automáticamente en Dashboard y copiada al portapapeles: {ip_ext}")
+                                
+                                # 3. Mostrar botón para copiar manualmente y reconectar
+                                btn_copiar_modal.pack(pady=4)
                                 self.autodetectar_camara_dinamico()
-                            except Exception:
-                                pass
+                            except Exception as ex:
+                                print(f"[UPDATE IP ERR] {ex}")
                     else:
                         lbl_res.configure(text=f"❌ {msg}", fg=CLR_RED)
-                        self.agregar_log_consola(f"[CÁMARA] ❌ Error enviando Wi-Fi por Serial: {msg}")
+                        self.agregar_log_consola(f"[CÁMARA] ❌ Error conectando Wi-Fi: {msg}")
                 self.root.after(0, _gui)
             threading.Thread(target=_task, daemon=True).start()
 
-        ttk.Button(win_wifi, text="💾 Guardar y Conectar por Serial", command=_enviar).pack(pady=8)
+        ttk.Button(win_wifi, text="💾 Guardar y Conectar por Serial", command=_enviar).pack(pady=6)
 
     def probar_oled_real(self):
         """Test OLED individual: animación osciloscopio + ecualizador + icono + checkmark."""
@@ -1655,12 +1699,41 @@ class AsistenteApp:
             )
             b.pack(side=tk.LEFT, padx=4, pady=3)
 
-        # Entrada de Texto y Voz abajo
+        # Entrada de Texto, Selección de Audio y Botón Detener Voz abajo
         f_input = ttk.Frame(container, style="Card.TFrame")
         f_input.pack(side=tk.BOTTOM, fill='x', padx=15, pady=10)
 
-        btn_detener = ttk.Button(f_input, text="🛑 Detener Voz", command=detener_habla)
+        # Botón destacado en rojo para detener voz de inmediato
+        def _on_stop_click():
+            from audio.tts import detener_habla
+            detener_habla()
+            self.agregar_log_consola("[AUDIO] 🛑 Reproducción de voz silenciada por el usuario.")
+
+        btn_detener = tk.Button(f_input, text="🛑 DETENER VOZ", command=_on_stop_click,
+                                bg="#8B0000", fg="#FFFFFF", activebackground="#FF0000", activeforeground="#FFFFFF",
+                                font=("Segoe UI", 10, "bold"), bd=1, relief="solid", cursor="hand2", padx=10, pady=4)
         btn_detener.pack(side=tk.RIGHT, padx=4)
+
+        # Selector de Salida de Audio: Bocina ESP32 vs Altavoces PC
+        from audio.tts import set_modo_salida_audio
+        self.combo_audio_salida = ttk.Combobox(f_input, values=["🔊 Bocina ESP32-S3 (Principal)", "🎧 Ambos Lados (ESP32 + PC)", "💻 Altavoces PC"], state="readonly", width=24, font=("Segoe UI", 9, "bold"))
+        self.combo_audio_salida.set("🔊 Bocina ESP32-S3 (Principal)")
+        set_modo_salida_audio("ESP32")
+        self.combo_audio_salida.pack(side=tk.RIGHT, padx=6)
+
+        def _on_audio_mode_change(event):
+            val = self.combo_audio_salida.get()
+            if "Ambos" in val:
+                set_modo_salida_audio("BOTH")
+                self.agregar_log_consola("[AUDIO] 🎧 Reproducción en paralelo activada: Bocina ESP32-S3 + PC.")
+            elif "PC" in val:
+                set_modo_salida_audio("PC")
+                self.agregar_log_consola("[AUDIO] 💻 Salida de audio redirigida a los altavoces de la PC.")
+            else:
+                set_modo_salida_audio("ESP32")
+                self.agregar_log_consola("[AUDIO] 🔊 Salida de audio configurada en la bocina principal ESP32-S3.")
+
+        self.combo_audio_salida.bind("<<ComboboxSelected>>", _on_audio_mode_change)
 
         btn_voz = ttk.Button(f_input, text="🎙️ Hablar (INMP441)", command=self.consultar_voz_mic_fisico)
         btn_voz.pack(side=tk.RIGHT, padx=4)
