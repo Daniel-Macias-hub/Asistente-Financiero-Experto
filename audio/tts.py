@@ -192,6 +192,10 @@ def hablar(texto: str):
                 if _stop_event.is_set() or not pcm_bytes:
                     return
 
+                # Prepend 250ms de silencio (8000 bytes) como preámbulo para des-mutear el amplificador MAX98357A sin cortar palabras
+                preambulo_silencio = b'\x00' * 8000
+                pcm_bytes = preambulo_silencio + pcm_bytes
+
                 # Si está activada la opción BOTH (Ambos Lados), reproducir simultáneamente en la PC
                 if MODO_SALIDA_AUDIO in ("PC", "BOTH"):
                     def _play_pc_async():
