@@ -1904,9 +1904,7 @@ class AsistenteApp:
                 resp = "No logré escuchar claramente tu pregunta. Por favor presiona 'Hablar' nuevamente o elige una pregunta sugerida."
                 
             self.agregar_mensaje("Asistente Experto", resp, "bot")
-            esp32_comm.enviar_comando_oled("RESPONDIENDO")
             hablar(resp)
-            esp32_comm.enviar_comando_oled("IDLE")
 
         threading.Thread(target=_run, daemon=True).start()
 
