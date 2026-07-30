@@ -501,20 +501,19 @@ while True:
                 except Exception:
                     pass
 
-            # FASE 2 - REPRODUCCIÓN: enviar al I2S de corrido, ya sin
-            # depender del ritmo de llegada por serial, para audio fluido.
+            # FASE 2 - REPRODUCCIÓN: enviar a I2S de corrido en formato bytes directo (100% compatible con DAC)
             if audio_out and pos > 0:
-                bloque = 2048
-                for i in range(0, pos, bloque):
-                    audio_out.write(mv[i:i + bloque] if total_bytes > 0 else audio_buffer[i:i + bloque])
-                
-                # Mantener el buffer vivo en RAM mientras la DMA de hardware termina de reproducir
-                duracion_seg = pos / 32000.0
+                audio_data = bytes(audio_buffer[:pos])
+                audio_out.write(audio_data)
+
+                duracion_seg = len(audio_data) / 32000.0
                 time.sleep(duracion_seg + 0.2)
 
             del audio_buffer
             if 'mv' in locals():
                 del mv
+            if 'audio_data' in locals():
+                del audio_data
             mostrar_idle()
             gc.collect()
             sys.stdout.write("AUDIO_PLAY_OK\n")
