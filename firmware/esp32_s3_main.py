@@ -497,8 +497,14 @@ while True:
                 bloque = 2048
                 for i in range(0, pos, bloque):
                     audio_out.write(mv[i:i + bloque] if total_bytes > 0 else audio_buffer[i:i + bloque])
+                
+                # Mantener el buffer vivo en RAM mientras la DMA de hardware termina de reproducir
+                duracion_seg = pos / 32000.0
+                time.sleep(duracion_seg + 0.2)
 
-            del audio_buffer, mv
+            del audio_buffer
+            if 'mv' in locals():
+                del mv
             mostrar_idle()
             gc.collect()
             sys.stdout.write("AUDIO_PLAY_OK\n")
