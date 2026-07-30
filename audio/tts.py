@@ -76,8 +76,10 @@ def _generar_pcm_edge_tts(texto: str, sample_rate: int = 16000, amp_scale: float
             pcm_mono = np.frombuffer(decoded.samples, dtype=np.int16)
             pcm_mono = _aplicar_filtro_audio_limpio(pcm_mono, sample_rate=sample_rate)
             pcm_mono = (pcm_mono * amp_scale).astype(np.int16)
-            # Intercambiar orden de bytes (Little Endian -> Big Endian) para alineación MSB en I2S DAC
-            pcm_mono = pcm_mono.byteswap()
+            # NO reordenar bytes: el firmware ESP32-S3 espera PCM16 Little Endian
+            # (mismo formato que usa struct.pack_into("<h", ...) en el micrófono).
+            # Invertir el orden de bytes aquí corrompe cada muestra y se percibe
+            # como interferencia/estática en la bocina.
             return pcm_mono.tobytes()
     except Exception as ex_edge:
         print(f"[EDGE-TTS ERR] {ex_edge}")
@@ -98,7 +100,7 @@ def _generar_pcm_gtts(texto: str, sample_rate: int = 16000, amp_scale: float = 0
             decoded = miniaudio.decode(mp3_data, nchannels=1, sample_rate=sample_rate)
             pcm_mono = np.frombuffer(decoded.samples, dtype=np.int16)
             pcm_mono = (pcm_mono * amp_scale).astype(np.int16)
-            pcm_mono = pcm_mono.byteswap()
+            # Sin byteswap: mismo motivo que en _generar_pcm_edge_tts (Little Endian nativo)
             return pcm_mono.tobytes()
     except Exception as ex_gtts:
         print(f"[GTTS ERR] {ex_gtts}")

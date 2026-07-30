@@ -449,7 +449,12 @@ while True:
             sys.stdout.write("AUDIO_PLAY_READY\n")
             safe_flush()
 
-            # Transmisión en tiempo real (instantánea) al amplificador
+            # FASE 1 - RECEPCIÓN: acumular todo el audio en RAM (PSRAM) sin
+            # tocar el I2S todavía. El UART (115200 baudios + overhead de
+            # Base64 ~33%) es ~4x más lento que el ritmo de reproducción real
+            # (16kHz/16-bit = 32000 bytes/seg), así que escribir al I2S al
+            # vuelo agota el buffer DMA y produce cortes ("entrecortado").
+            audio_buffer = bytearray()
             while True:
                 line_b64 = sys.stdin.readline()
                 if not line_b64:
@@ -459,11 +464,18 @@ while True:
                     break
                 try:
                     chunk = ubinascii.a2b_base64(s)
-                    if audio_out and len(chunk) > 0:
-                        audio_out.write(chunk)
+                    audio_buffer.extend(chunk)
                 except Exception:
                     pass
 
+            # FASE 2 - REPRODUCCIÓN: enviar al I2S de corrido, ya sin
+            # depender del ritmo de llegada por serial, para audio fluido.
+            if audio_out and len(audio_buffer) > 0:
+                bloque = 2048
+                for i in range(0, len(audio_buffer), bloque):
+                    audio_out.write(audio_buffer[i:i + bloque])
+
+            del audio_buffer
             mostrar_idle()
             gc.collect()
             sys.stdout.write("AUDIO_PLAY_OK\n")
