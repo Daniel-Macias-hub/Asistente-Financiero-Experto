@@ -237,15 +237,28 @@ def reproducir_audio_pcm_stream(total_bytes):
     bytes_read = 0
     stdin_buf = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
 
+    # FASE 1 - RECEPCIÓN: acumular en RAM antes de tocar el I2S. Incluso sin
+    # el overhead de Base64, 115200 baudios (~11.5KB/s) sigue siendo más
+    # lento que el ritmo de reproducción PCM 16kHz/16-bit (32KB/s), así que
+    # escribir al I2S al vuelo sigue produciendo cortes.
+    audio_buffer = bytearray(total_bytes)
+    mv = memoryview(audio_buffer)
     while bytes_read < total_bytes:
         to_read = min(512, total_bytes - bytes_read)
         num_r = stdin_buf.readinto(READ_BUF, to_read)
         if num_r and num_r > 0:
-            audio_out.write(READ_BUF[:num_r])
+            mv[bytes_read:bytes_read + num_r] = READ_BUF[:num_r]
             bytes_read += num_r
         else:
             break
 
+    # FASE 2 - REPRODUCCIÓN: de corrido, sin depender del ritmo del serial.
+    if audio_out and bytes_read > 0:
+        bloque = 2048
+        for i in range(0, bytes_read, bloque):
+            audio_out.write(mv[i:i + bloque])
+
+    del audio_buffer, mv
     sys.stdout.write("AUDIO_PLAY_OK\n")
     safe_flush()
     gc.collect()
