@@ -446,15 +446,26 @@ while True:
                 except Exception:
                     pass
 
+            try:
+                total_bytes = int(cmd.split(":", 1)[1])
+            except Exception:
+                total_bytes = 0
+
             sys.stdout.write("AUDIO_PLAY_READY\n")
             safe_flush()
 
             # FASE 1 - RECEPCIÓN: acumular todo el audio en RAM (PSRAM) sin
-            # tocar el I2S todavía. El UART (115200 baudios + overhead de
-            # Base64 ~33%) es ~4x más lento que el ritmo de reproducción real
-            # (16kHz/16-bit = 32000 bytes/seg), así que escribir al I2S al
-            # vuelo agota el buffer DMA y produce cortes ("entrecortado").
-            audio_buffer = bytearray()
+            # tocar el I2S todavía. Se PREASIGNA el buffer con el tamaño
+            # exacto (viaja en el comando AUDIO_PLAY:<bytes>) y se escribe
+            # por índice con memoryview, en vez de bytearray()+.extend()
+            # (costo cuadrático que hace perder el ritmo del UART en audios
+            # largos y deja la línea AUDIO_PLAY_END sin reconocerse).
+            if total_bytes > 0:
+                audio_buffer = bytearray(total_bytes)
+            else:
+                audio_buffer = bytearray()
+            mv = memoryview(audio_buffer)
+            pos = 0
             while True:
                 line_b64 = sys.stdin.readline()
                 if not line_b64:
@@ -464,19 +475,30 @@ while True:
                     break
                 try:
                     chunk = ubinascii.a2b_base64(s)
-                    audio_buffer.extend(chunk)
+                    n = len(chunk)
+                    if n == 0:
+                        continue
+                    if total_bytes > 0:
+                        if pos + n > total_bytes:
+                            n = total_bytes - pos
+                            if n <= 0:
+                                continue
+                        mv[pos:pos + n] = chunk[:n]
+                        pos += n
+                    else:
+                        audio_buffer.extend(chunk)
+                        pos += n
                 except Exception as ex_b64:
                     sys.stdout.write(f"[AUDIO_PLAY ERR] {ex_b64}\n")
                     safe_flush()
 
-            # FASE 2 - REPRODUCCIÓN: enviar al I2S de corrido, ya sin
-            # depender del ritmo de llegada por serial, para audio fluido.
-            if audio_out and len(audio_buffer) > 0:
+            # FASE 2 - REPRODUCCIÓN: enviar al I2S de corrido.
+            if audio_out and pos > 0:
                 bloque = 2048
-                for i in range(0, len(audio_buffer), bloque):
-                    audio_out.write(audio_buffer[i:i + bloque])
+                for i in range(0, pos, bloque):
+                    audio_out.write(mv[i:i + bloque] if total_bytes > 0 else audio_buffer[i:i + bloque])
 
-            del audio_buffer
+            del audio_buffer, mv
             mostrar_idle()
             gc.collect()
             sys.stdout.write("AUDIO_PLAY_OK\n")
