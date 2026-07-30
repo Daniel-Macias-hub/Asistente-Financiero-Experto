@@ -184,10 +184,10 @@ def hablar(texto: str):
             from comunicacion_esp32 import esp32_comm
             
             try:
-                # 1. Generar audio PCM con síntesis Neural HD a 16000 Hz nativos (70% de amplitud para nitidez sin interferencias)
-                pcm_bytes = _generar_pcm_edge_tts(texto_sintesis, sample_rate=16000, amp_scale=0.70)
+                # 1. Generar audio PCM con síntesis Neural HD a 16000 Hz nativos (90% de amplitud para volumen alto y nitidez)
+                pcm_bytes = _generar_pcm_edge_tts(texto_sintesis, sample_rate=16000, amp_scale=0.90)
                 if not pcm_bytes:
-                    pcm_bytes = _generar_pcm_gtts(texto_sintesis, sample_rate=16000, amp_scale=0.70)
+                    pcm_bytes = _generar_pcm_gtts(texto_sintesis, sample_rate=16000, amp_scale=0.90)
 
                 if _stop_event.is_set() or not pcm_bytes:
                     return
