@@ -1,0 +1,12 @@
+# Dependencias para el Asistente de Voz Educativo (Offline) y Visión
+vosk
+pyttsx3
+sounddevice
+numpy
+yfinance
+opencv-python
+pillow
+requests
+python-dotenv
+
+# Nota: sqlite3 y tkinter vienen integrados en la librería estándar de Python

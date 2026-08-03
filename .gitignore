@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.db
+conocimiento.db
+modelo_vosk/
+.env
+.vscode/
+.trae/
+*.wav
+scratch/
