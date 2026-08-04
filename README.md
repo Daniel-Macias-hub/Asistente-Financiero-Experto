@@ -1,91 +1,77 @@
-# 🤖 ASISTENTE EDUCATIVO Y FINANCIERO EXPERTO
+# 🤖 ASISTENTE EDUCATIVO Y FINANCIERO EXPERTO (v2.0 SIFT Vision Edition)
 
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![C++](https://img.shields.io/badge/C++-Arduino_IDE-00979D.svg)
-![Hardware](https://img.shields.io/badge/Hardware-Verificado_100%25-brightgreen.svg)
+![Vision](https://img.shields.io/badge/Vis%C3%B3n-SIFT%20%7C%20FLANN%20%7C%20RANSAC-brightgreen.svg)
+![Hardware](https://img.shields.io/badge/Hardware-ESP32--S3%20%7C%20ESP32--CAM-orange.svg)
+![Audio](https://img.shields.io/badge/Audio-Edge--TTS%20%7C%20Vosk%20STT-blueviolet.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Audio](https://img.shields.io/badge/Audio-pyttsx3%20%7C%20edge--tts-orange.svg)
-![DB](https://img.shields.io/badge/BD-SQLite3-lightgrey.svg)
 
-Sistema embebido inteligente y suite de escritorio para educación financiera, análisis bursátil y reconocimiento de divisas/criptomonedas mediante visión por computadora y voz. Opera de manera integral con un circuito físico autónomo (**ESP32-S3 N16R8**) equipado con micrófono I2S, amplificador I2S, pantalla OLED y visión streaming en tiempo real vía **ESP32-CAM**.
+Sistema embebido inteligente y suite de escritorio para educación financiera, análisis bursátil y reconocimiento visual de criptomonedas en tiempo real. Combina hardware físico autónomo (**ESP32-S3 N16R8** con micrófono I2S, amplificador I2S y pantalla OLED) y visión streaming vía **ESP32-CAM**, impulsado por un motor de Visión por Computadora avanzado basado en **SIFT (Scale-Invariant Feature Transform)** con homografía 3D **RANSAC**.
 
 ---
 
 ## 🎯 DESCRIPCIÓN DEL PROYECTO
 
-El **Asistente Financiero Experto** es una solución de hardware y software diseñada para interactuar con el usuario de manera natural (voz y visión) y brindar asistencia en tiempo real sobre educación financiera, cotización del mercado y reconocimiento visual de criptomonedas.
+El **Asistente Financiero Experto** es una plataforma integral de hardware y software diseñada para interactuar mediante **voz, texto y visión por computadora**. Permite responder preguntas financieras, dar cotizaciones de mercado en vivo (USD / MXN) e identificarcriptomonedas mediante análisis de logotipos en imágenes congeladas (snapshots) o video en vivo.
 
 ### ✨ Características Principales:
-* **Entrada de Voz Física:** Captura de comandos de voz mediante el micrófono I2S **INMP441**.
-* **Salida de Audio en Circuito:** Reproducción de respuestas sintetizadas (TTS) a través del amplificador I2S **MAX98357A** y bocina de 3W.
-* **Interfaz de Pantalla Embebida:** Animaciones de estado y retroalimentación visual en pantalla **OLED SSD1306**.
-* **Visión Remota en Tiempo Real:** Transmisión MJPEG y captura de fotos vía **ESP32-CAM**.
-* **Reconocimiento Visual IA:** Detección de logotipos cripto con un sistema de dos capas: **ORB (Offline)** y **Google Gemini Vision (Nube)**.
-* **Dashboard Profesional (Estilo Bloomberg):** Interfaz gráfica en PC hecha con **Tkinter**, con tema oscuro y métricas en tiempo real.
-* **Motor Experto Local:** Base de conocimientos en **SQLite3** que permite responder definiciones y relacionar conceptos financieros usando lógica de encadenamiento.
+* **👁️ Motor de Visión SIFT de Alta Precisión (Offline 100%):** Detección de logotipos inmune a rotaciones de 360°, cambios de escala, reflejos y ruido de pantalla, utilizando histogramas de gradiente de 128 dimensiones, matcheo KD-Tree (FLANN) y validación de geometría 3D por homografía RANSAC.
+* **📸 Modo Fotografía Instantánea (Snapshot):** Captura en alta resolución al presionar el botón "Escanear Cripto", congelando el fotograma y mostrando inmediatamente la evidencia fotográfica en el panel derecho de la interfaz.
+* **🧬 Súper-Entrenamiento y Augmentation:** Generación física de mutaciones visuales (ruido gaussiano, rotaciones 2D, variaciones de escala, binario y contraste) almacenadas en `dataset_generado/` y compiladas a memoria en `modelos_vision/orb_descriptors.pkl`.
+* **☁️ Capa Híbrida Cloud (Gemini Vision API):** Integración opcional con la API de Google Gemini 3.6 Flash para reconocimiento secundario en la nube.
+* **🗣️ Síntesis de Voz Neuronal HD (Edge-TTS + Fallback Local):** Generación de audio fluido con voces neurales de Microsoft (`es-MX`) y reproducción en altavoces de PC o en la bocina física del circuito.
+* **👂 Reconocimiento de Voz Offline (Vosk STT):** Procesamiento de audio local para dictar preguntas directamente desde el micrófono físico **INMP441**.
+* **📊 Cotizaciones en Tiempo Real:** Integración directa con **CoinGecko API** y **Yahoo Finance** para obtener precios actualizados en USD y conversión automática a MXN.
+* **🖥️ Interfaz Profesional Tkinter (Bloomberg Dark Theme):** Dashboard multitarea con monitoreo de hardware, logs en tiempo real, chat conversacional y catálogo interactivo.
 
 ---
 
-## 🖥️ MODOS DE OPERACIÓN
+## 📐 DIAGRAMAS DE FUNCIONAMIENTO Y ARQUITECTURA
 
-### 1️⃣ Modo Completo (Hardware ESP32 + PC)
-Requiere el microcontrolador ESP32-S3, ESP32-CAM y todos los componentes físicos armados. Habilita el audio a través de la bocina física, muestra animaciones en la pantalla OLED y permite analizar objetos con la cámara.
-
-### 2️⃣ Modo Solo PC (Sin hardware, ideal para pruebas)
-Permite usar el **chat conversacional** y las **consultas financieras en tiempo real** directamente desde la computadora sin necesidad de armar el circuito.
-1. Ejecuta el archivo `main.py` en tu PC.
-2. Escribe tu pregunta en la pestaña de chat y presiona **Enviar**.
-3. La respuesta aparecerá en pantalla y el asistente la **leerá en voz alta** usando los altavoces de tu computadora.
-
-> [!NOTE]
-> En modo "Solo PC", el ESP32 aparecerá como **DESCONECTADO** en el panel de control — esto es completamente normal y el sistema funcionará sin problemas.
-
----
-
-## 📐 DIAGRAMAS DE FUNCIONAMIENTO (FLUJOS)
-
-A continuación, se detalla paso a paso cómo funciona internamente el sistema. Estos diagramas son clave para entender la interacción entre los diferentes módulos.
+A continuación se presentan los diagramas de flujo completos para cada subsistema del proyecto.
 
 ### 1. Arquitectura General del Sistema
 ```mermaid
 graph TB
-    subgraph HW["🔌 Hardware Físico (ESP32)"]
+    subgraph HW["🔌 Hardware Físico (ESP32-S3 / ESP32-CAM)"]
         MIC["🎙️ INMP441\nMicrófono I2S"]
         OLED["📺 SSD1306\nPantalla OLED"]
         AMP["🔊 MAX98357A\nAmplificador I2S"]
         BOC["🔈 Bocina 3W"]
-        ESP32["⚡ ESP32-S3 N16R8\n(C++ / Arduino)"]
-        CAM["📷 ESP32-CAM\n(MJPEG Stream)"]
+        ESP32["⚡ ESP32-S3 N16R8\n(C++ Arduino)"]
+        CAM["📷 ESP32-CAM\n(MJPEG Stream / HTTP)"]
     end
 
-    subgraph PC["💻 Aplicación de Escritorio (Python 3)"]
+    subgraph PC["💻 Aplicación de Escritorio (Python 3.9+)"]
         GUI["🖥️ Dashboard Tkinter\n(Bloomberg Dark Theme)"]
-        MOTOR["🧠 Motor Experto\n(SQLite + Reglas)"]
-        TTS["🗣️ TTS Audio\n(edge-tts / pyttsx3)"]
-        STT["👂 STT Audio\n(Vosk Offline)"]
-        API["📊 APIs Financieras\n(CoinGecko / yFinance)"]
-        VISION["👁️ Visión IA\n(ORB + Gemini)"]
+        MOTOR["🧠 Motor Experto\n(SQLite + Reglas de Inferencia)"]
+        TTS["🗣️ Sistema de Voz TTS\n(Edge-TTS / pyttsx3)"]
+        STT["👂 Decodificador STT\n(Vosk Offline)"]
+        API["📊 APIs de Mercado\n(CoinGecko / yFinance)"]
+        VISION["👁️ Motor de Visión SIFT\n(SIFT + FLANN + RANSAC)"]
     end
 
-    subgraph CLOUD["☁️ Servicios en Nube"]
+    subgraph CLOUD["☁️ Servicios Externos / Nube"]
         CG["CoinGecko API"]
         YF["Yahoo Finance"]
-        GEM["Google Gemini Vision"]
-        ETTS["edge-tts\n(Microsoft Neural)"]
+        GEM["Google Gemini 3.6 Flash"]
+        ETTS["Microsoft Edge TTS (Neural)"]
     end
 
-    MIC -->|"PCM 16kHz\nBase64 UART"| ESP32
-    ESP32 <-->|"Serial 921600 baud\nComandos y Base64"| GUI
+    MIC -->|"Audio PCM 16kHz Base64"| ESP32
+    ESP32 <-->|"Serial UART 921600 baud"| GUI
     GUI -->|"PCM 16kHz Base64"| ESP32
-    ESP32 -->|"PCM"| AMP
+    ESP32 -->|"Audio I2S"| AMP
     AMP --> BOC
     ESP32 --> OLED
-    CAM -->|"MJPEG HTTP\nWi-Fi Local"| VISION
+    CAM -->|"MJPEG Stream HTTP"| VISION
 
     GUI --> MOTOR
     GUI --> TTS
     GUI --> STT
     GUI --> API
+    GUI --> VISION
     
     MOTOR --> API
     API --> CG
@@ -98,20 +84,80 @@ graph TB
     style CLOUD fill:#0f3460,stroke:#533483,color:#fff
 ```
 
-### 2. Flujo de Voz — Entrada (Micrófono → STT → Texto)
+---
+
+### 2. Flujo de Visión: Reconocimiento Fotográfico SIFT (Snapshot & Stream)
 ```mermaid
 flowchart TD
-    A(["🎙️ Usuario habla\n(Micrófono INMP441 en ESP32)"])
-    B["ESP32 captura audio PCM\n16kHz Mono 24-bit (shift a 16-bit)"]
-    C["Codificación Base64\n+ envío por UART Serial a la PC"]
-    D["PC recibe paquete\n'MIC_CAPTURE:...' en Python"]
-    E["Decodificación Base64\n→ bytes PCM crudos"]
-    F["Motor Vosk STT Offline\n(modelo local en español)"]
-    G{{"¿Se reconoció\nel texto?"}}
-    H["Corrección fonética\n(ej: 'vitcoin' -> 'bitcoin')"]
-    I["Motor Experto procesa\nla consulta (router.py)"]
-    J(["✅ Respuesta generada"])
-    K(["⚠️ Error: 'No se reconoció el comando'"])
+    A(["📸 Usuario presiona 'Escanear Cripto' o activa Stream"])
+    B["Capturar fotograma congelado (Snapshot) de la cámara"]
+    C["Convertir fotograma a escala de grises cruda (sin blur destructivo)"]
+    D["Extraer Keypoints y Descriptores SIFT (128 dimensiones)"]
+    E{"¿Se detectaron >= 10 puntos clave?"}
+    
+    F["Cargar Base de Conocimiento\n(modelos_vision/orb_descriptors.pkl)"]
+    G["Matcheo FLANN (KD-Tree) entre descriptores de referencia y fotograma"]
+    H["Filtro de Ratio de Lowe (0.75)\nFiltrar puntos ambiguos"]
+    I{"¿Puntos coincidentes >= 6?"}
+    
+    J["Calcular Homografía 3D RANSAC (Umbral 5.0)\nValidar geometría de plano y perspectiva"]
+    K["Contar Inliers válidos"]
+    L{"¿Inliers RANSAC >= 8?"}
+    
+    M["Calcular Confianza: min(0.99, Inliers / 25.0)"]
+    N(["✅ Criptomoneda Identificada\nMostrar resultado y consulta en vivo"])
+    O(["❌ NO DETECTADO\nMostrar foto en panel derecho sin falso positivo"])
+
+    A --> B --> C --> D --> E
+    E -->|"Sí"| F --> G --> H --> I
+    E -->|"No (< 10 puntos)"| O
+    I -->|"Sí"| J --> K --> L
+    I -->|"No (< 6 puntos)"| O
+    L -->|"Sí (>= 8 inliers)"| M --> N
+    L -->|"No (< 8 inliers - Cortina/Pared)"| O
+
+    style A fill:#0f3460,color:#fff
+    style N fill:#4caf50,color:#fff
+    style O fill:#e94560,color:#fff
+```
+
+---
+
+### 3. Flujo de Entrenamiento Visual & Augmentation (`entrenamiento_mejorado.py`)
+```mermaid
+flowchart TD
+    A(["📂 Imágenes base en crypto_dataset/ (Bitcoin, ETH, SOL...)"])
+    B["Cargar imagen y remover fondo transparente (Canal Alpha a blanco)"]
+    C["Generar variaciones de Escala (150px y 300px)"]
+    D["Generar variaciones de Rotación 2D (-10°, 0°, +10°)"]
+    E["Aplicar Mutaciones Visuales:\n• Normal\n• Contraste CLAHE\n• Brillo (+20%)\n• Ruido Gaussiano (Textura cámara)\n• Umbral Binario (B&N)"]
+    F["Guardar física de mutaciones en dataset_generado/<clase>/"]
+    G["Extraer Descriptores SIFT (128-dim) de cada variante"]
+    H["Serializar descriptores en pickle\n(modelos_vision/orb_descriptors.pkl)"]
+    I(["✅ Modelo listo para usar en main.py"])
+
+    A --> B --> C --> D --> E --> F --> G --> H --> I
+
+    style A fill:#16213e,color:#fff
+    style I fill:#4caf50,color:#fff
+```
+
+---
+
+### 4. Flujo de Entrada de Voz (Micrófono INMP441 → Vosk STT → Motor Experto)
+```mermaid
+flowchart TD
+    A(["🎙️ Usuario habla frente al Micrófono INMP441"])
+    B["ESP32-S3 captura audio PCM I2S (16kHz, Mono, 24-bit)"]
+    C["Shift de bits a PCM 16-bit + Codificación Base64"]
+    D["Transmisión UART Serial (921600 baud) a la PC"]
+    E["Python recibe comando 'MIC_CAPTURE:...' y decodifica Base64"]
+    F["Decodificador Vosk STT (Modelo Local en Español)"]
+    G{{"¿Texto reconocido?"}}
+    H["Corrección fonética inteligente\n(ej. 'bit coin' → 'bitcoin')"]
+    I["Consulta al Motor Experto / Base de Conocimiento SQLite"]
+    J(["✅ Generar respuesta y sintetizar audio"])
+    K(["⚠️ Notificar: 'Comando no reconocido'"])
 
     A --> B --> C --> D --> E --> F --> G
     G -->|"Sí"| H --> I --> J
@@ -122,93 +168,68 @@ flowchart TD
     style K fill:#ff9800,color:#fff
 ```
 
-### 3. Flujo de Audio — Salida (Texto → TTS → Bocina)
+---
+
+### 5. Flujo de Salida de Voz & Audio (Texto → Edge-TTS → Altavoces / Bocina ESP32)
 ```mermaid
 flowchart TD
-    A(["📝 Texto generado\npor el Motor Experto"])
-    B["Limpieza de texto\n(elimina emojis y Markdown)"]
-    C{{"¿Internet y\nedge-tts disponible?"}}
-    D["Generar audio HD\n(Voz Neural es-MX)"]
-    E["Generar audio local\n(pyttsx3 - fallback)"]
-    F{{"Selector de Salida\n(Interfaz Tkinter)"}}
-    G["🔈 Altavoces de la PC\n(sounddevice)"]
-    H{{"¿ESP32\nConectado?"}}
-    I["💻 Fallback automático\na Altavoces de la PC"]
-    J["Codificar PCM a Base64\ny enviar por Serial a ESP32"]
-    K["ESP32 decodifica Base64\ny envía a I2S (MAX98357A)"]
-    L(["🔊 Suena en la\nbocina física"])
+    A(["📝 Respuesta de Texto en Python"])
+    B["Limpieza de texto (Remover Markdown y Emojis)"]
+    C{{"¿Conexión a Internet disponible?"}}
+    D["Sintetizar Audio HD con Microsoft Edge-TTS\n(Voz Neural 'es-MX-DaliaNeural')"]
+    E["Sintetizar Audio Local con pyttsx3 (Offline Fallback)"]
+    F{{"Selector de Salida (Dashboard Tkinter)"}}
+    G["🔊 Altavoces de la PC (sounddevice / miniaudio)"]
+    H["Codificar Audio a PCM Base64 y transmitir por Serial al ESP32"]
+    I["ESP32 decodifica y reproduce en I2S (MAX98357A + Bocina 3W)"]
 
     A --> B --> C
     C -->|"Sí"| D --> F
     C -->|"No"| E --> F
     F -->|"Modo PC"| G
-    F -->|"Modo ESP32 / Ambos"| H
-    H -->|"No"| I
-    H -->|"Sí"| J --> K --> L
+    F -->|"Modo ESP32 / Ambos"| H --> I
 
     style A fill:#0f3460,color:#fff
     style G fill:#4caf50,color:#fff
-    style L fill:#e94560,color:#fff
-    style I fill:#ff9800,color:#fff
-```
-
-### 4. Flujo de Consultas Financieras y Lógica
-```mermaid
-flowchart TD
-    A(["💬 Pregunta del Usuario\n(Texto desde chat o voz)"])
-    B["Normalizar Texto\n(Minúsculas, sin acentos)"]
-    C{{"¿Es pregunta\nde precio o mercado?"}}
-    D["Consultar CoinGecko API\n(o Yahoo Finance si falla)"]
-    E["Formatear respuesta con\nPrecio, Volatilidad, etc."]
-    F{{"¿Es pregunta frecuente\nguardada en BD?"}}
-    G["Extraer respuesta exacta\nde la BD SQLite"]
-    H["Motor de Inferencia\n(Encadenamiento hacia adelante)"]
-    I["Buscar conceptos clave,\ndefiniciones y reglas"]
-    J(["✅ Mostrar respuesta\ny enviar al TTS"])
-
-    A --> B --> C
-    C -->|"Sí (ej: 'precio btc')"| D --> E --> J
-    C -->|"No"| F
-    F -->|"Sí"| G --> J
-    F -->|"No"| H --> I --> J
-
-    style A fill:#0f3460,color:#fff
-    style J fill:#4caf50,color:#fff
-```
-
-### 5. Flujo de Visión — Reconocimiento de Criptomonedas
-```mermaid
-flowchart TD
-    A(["📷 ESP32-CAM\n(Stream HTTP MJPEG)"])
-    B["Python obtiene frame\nHTTP GET /capture"]
-    C{{"¿Cámara disponible\ny detectando?"}}
-    D["Capa 1: Gemini Vision API\nEnvía imagen en Base64"]
-    E{{"¿Hay API Key y\nRespuesta Exitosa?"}}
-    F["Extrae nombre de cripto y\nconfianza > 80%"]
-    G["Capa 2: Detector ORB (Local)\nFiltro Color HSV + Descriptores"]
-    H{{"¿Matches ORB > 8\ny Alta Confianza?"}}
-    I(["✅ Mostrar Cripto Detectada\nen la Interfaz (Dashboard)"])
-    J(["❓ Sin coincidencia\n(No se reconoció)"])
-
-    A --> B --> C
-    C -->|"Sí"| D
-    D --> E
-    E -->|"Sí"| F --> I
-    E -->|"Falla o sin Internet"| G
-    G --> H
-    H -->|"Sí"| I
-    H -->|"No"| J
-
-    style A fill:#1a1a2e,color:#fff
-    style I fill:#4caf50,color:#fff
-    style J fill:#555,color:#aaa
+    style I fill:#e94560,color:#fff
 ```
 
 ---
 
-## 🔌 HARDWARE UTILIZADO Y PINOUT (ESP32-S3)
+## 👁️ DETALLES TÉCNICOS DEL MOTOR DE VISIÓN
 
-Si decides armar el hardware físico, estas son las conexiones exactas hacia tu **ESP32-S3 N16R8**:
+### ¿Por qué SIFT y no ORB?
+Anteriormente el sistema utilizaba **ORB (Oriented FAST and Rotated BRIEF)**. Si bien ORB es sumamente rápido, utiliza descriptores binarios de solo 32 dimensiones basados en esquinas simples. En escenarios reales con cámaras web de baja resolución (como la ESP32-CAM) fotografiando pantallas de computadora o impresiones:
+* ORB sufría por interferencia de patrones de textura (Moiré).
+* Confundía fondos rugosos (cortinas, paredes, persianas) con logotipos.
+* No realizaba verificación de profundidad plana o perspectiva.
+
+**La Solución SIFT (Scale-Invariant Feature Transform):**
+1. **Histogramas de Gradiente de 128 Dimensiones:** SIFT analiza la orientación de los gradientes de intensidad en múltiples escalas del espacio de escala Gaussiano. Es completamente invariante a rotaciones de 360°, cambios de escala (zoom) e iluminación.
+2. **Matcheo FLANN (Fast Library for Approximate Nearest Neighbors):** Utiliza un árbol de búsqueda `KD-Tree` (5 árboles, 50 comparaciones) para encontrar los vecinos más cercanos en el espacio vectorial de 128 dimensiones entre la foto tomada y la base de datos de entrenamiento.
+3. **Filtro de Ratio de Lowe (0.75):** Compara la distancia del vecino más cercano contra el segundo vecino más cercano ($d_1 < 0.75 \times d_2$). Si el ratio es mayor a 0.75, la coincidencia se descarta por ambigua.
+4. **Validación de Geometría 3D por Homografía RANSAC:** Se construye una matriz de transformación de plano de $3 \times 3$ entre los puntos del logotipo y los de la imagen tomada. Si un punto no cumple geométricamente la ecuación del plano, es descartado como *Outlier*. Solo los *Inliers* (puntos matemáticamente válidos en el mismo plano) cuentan para la detección.
+5. **Umbral Anti-Falsos Positivos (>= 8 Inliers):** Una pared o cortina solo puede generar 1 o 2 inliers accidentales; al requerir al menos 8 inliers validados por RANSAC, los falsos positivos se reducen a cero.
+
+---
+
+## 🗣️ SÍNTESIS Y RECONOCIMIENTO DE VOZ
+
+### 1. Síntesis de Voz (TTS)
+El sistema implementa una arquitectura híbrida de voz:
+* **Capa Principal (Online HD):** Utiliza la librería `edge-tts` que se conecta a los servicios de síntesis neural de Microsoft Azure/Edge, produciendo voz natural mexicana (`es-MX-DaliaNeural` o `es-MX-JorgeNeural`).
+* **Capa Secundaria (Offline Fallback):** Si no hay conexión a internet, conmuta automáticamente a `pyttsx3` / SAPI5 local.
+
+### 2. Canales de Audio
+Desde el panel de control de la GUI se puede seleccionar dónde debe sonar el asistente:
+1. **Altavoces de la PC:** Reproducción directa con la tarjeta de sonido de la computadora.
+2. **Bocina Física (ESP32-S3):** El audio procesado se transmite en paquetes Base64 por el puerto serie, donde el ESP32-S3 los convierte en muestras PCM I2S hacia el amplificador **MAX98357A** y la bocina de 3W.
+
+---
+
+## 🔌 HARDWARE UTILIZADO Y CONEXIONES (ESP32-S3)
+
+Para operar en **Modo Hardware**, estas son las conexiones exactas hacia el microcontrolador **ESP32-S3 N16R8**:
 
 ### 1. Pantalla OLED SSD1306 (I2C)
 | ESP32-S3 Pin | SSD1306 | Función |
@@ -223,7 +244,7 @@ Si decides armar el hardware físico, estas son las conexiones exactas hacia tu 
 | :--- | :--- | :--- |
 | **GPIO 5** | SCK (BCLK) | Reloj de bits I2S |
 | **GPIO 4** | WS (LRCK) | Selección de canal |
-| **GPIO 6** | SD (DOUT) | Datos de audio salida |
+| **GPIO 6** | SD (DOUT) | Datos de salida audio |
 | **GND** | L/R | Canal Izquierdo (Mono) |
 | **3V3** | VDD | Alimentación 3.3V |
 
@@ -232,99 +253,117 @@ Si decides armar el hardware físico, estas son las conexiones exactas hacia tu 
 | :--- | :--- | :--- |
 | **GPIO 15** | BCLK | Reloj de bits I2S |
 | **GPIO 16** | LRC | Selección de canal |
-| **GPIO 7** | DIN | Datos de audio entrada |
+| **GPIO 7** | DIN | Entrada datos audio |
 | **5V / VIN** | VIN | Alimentación (Recomendado 5V) |
 | **GND** | GND | Tierra |
 | **—** | + / - | Bocina 4Ω/8Ω de 3W |
 
 ---
 
-## ⚙️ GUÍA DE INSTALACIÓN PASO A PASO (Para Principiantes)
+## 🚀 GUÍA DE INSTALACIÓN Y USO PASO A PASO
 
-Para ejecutar este proyecto, necesitas configurar dos entornos: el entorno de software en tu PC (Python) y el firmware del microcontrolador (Arduino IDE).
+### Requisitos Previos
+* **Python 3.9 o superior** instalado (marcar "Add Python to PATH" durante la instalación).
+* **Git** instalado (opcional).
 
-### Fase 1: Preparación del Entorno en la PC (Python)
+---
 
-1. **Descargar Python:**
-   Asegúrate de tener instalado **Python 3.9 o superior**. Durante la instalación en Windows, marca la casilla **"Add Python to PATH"**.
-   
-2. **Clonar el proyecto:**
-   Descarga este proyecto como ZIP o clónalo con git:
-   ```powershell
-   git clone https://github.com/Daniel-Macias-hub/Asistente-Financiero-Experto.git
-   cd Asistente-Financiero-Experto
-   ```
+### Paso 1: Clonar el Repositorio e Instalar Dependencias
 
-3. **Instalar dependencias:**
-   Haz doble clic en el archivo `instalar_dependencias.bat` que está en la carpeta principal. Esto instalará automáticamente todas las librerías necesarias.
-   *(Alternativamente, puedes abrir la terminal y escribir: `pip install -r requirements.txt`)*.
+```powershell
+# Clonar proyecto
+git clone https://github.com/Daniel-Macias-hub/Asistente-Financiero-Experto.git
+cd Asistente-Financiero-Experto
 
-4. **Configurar la API Key (Opcional pero recomendado para Visión):**
-   * Crea un archivo llamado `.env` en la raíz del proyecto.
-   * Consigue una clave gratuita de Google Gemini AI y añádela al archivo así:
-     ```env
-     GEMINI_API_KEY=tu_api_key_aqui
-     ```
+# Instalar librerías de Python
+pip install -r requirements.txt
+```
 
-5. **Inicializar la Base de Datos:**
-   Antes de correr el programa por primera vez, necesitas crear y poblar la base de datos de conocimientos:
-   ```powershell
-   python inicializar_datos.py
-   ```
+*(O haz doble clic en `instalar_dependencias.bat` en Windows).*
 
-### Fase 2: Configuración del ESP32-S3 (Arduino IDE)
-*(Si solo quieres usar el "Modo PC", puedes omitir esta fase).*
+---
 
-1. **Instalar Arduino IDE:**
-   Descarga la versión más reciente desde [arduino.cc](https://www.arduino.cc/en/software).
-2. **Añadir el soporte para ESP32:**
-   * En Arduino IDE ve a *Archivo -> Preferencias*.
-   * En "Gestor de URLs Adicionales de Tarjetas", pega: `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
-   * Ve a *Herramientas -> Placa -> Gestor de placas*, busca **esp32** por Espressif y dale a instalar.
-3. **Instalar Librerías en Arduino:**
-   Ve a *Programa -> Incluir Librería -> Gestionar Librerías...* y busca e instala:
-   * **Adafruit GFX Library**
-   * **Adafruit SSD1306**
-4. **Subir el Firmware:**
-   * Abre el archivo `firmware/esp32_s3_arduino/esp32_s3_arduino.ino`.
-   * En *Herramientas -> Placa*, selecciona **ESP32S3 Dev Module**.
-   * Selecciona el puerto COM correcto donde está conectada tu placa.
-   * Haz clic en el botón de **Subir** (flecha hacia la derecha).
+### Paso 2: Inicializar la Base de Datos de Conocimiento
 
-> [!TIP]
-> Si tienes una ESP32-CAM, cárgale un código estándar de "CameraWebServer" (que viene de ejemplo en Arduino IDE). Asegúrate de que la cámara se conecte a la misma red Wi-Fi que tu PC, y actualiza la URL en el panel de cámara de la interfaz Python si es necesario.
+Antes de la primera ejecución, carga la base de datos de preguntas y conceptos financieros:
+```powershell
+python inicializar_datos.py
+```
 
-### Fase 3: ¡A Disfrutar!
+---
 
-Una vez completados los pasos, simplemente ejecuta la aplicación en tu computadora:
+### Paso 3: Entrenar el Modelo de Visión SIFT
+
+Para que la IA aprenda los logotipos de la carpeta `crypto_dataset/`, genere las mutaciones en `dataset_generado/` y compile la base de conocimiento vectorial en `modelos_vision/orb_descriptors.pkl`, ejecuta:
+
+```powershell
+python entrenamiento_mejorado.py
+```
+
+*Salida esperada:*
+```text
+Iniciando súper-entrenamiento SIFT (Gradient Histograms, Vectores, Ruido)...
+[OK] bitcoin: 258 mutaciones visuales aprendidas.
+[OK] bnb: 270 mutaciones visuales aprendidas.
+...
+✅ Súper-Entrenamiento finalizado.
+🎯 Monedas identificables: 7
+🧠 Puntos de conocimiento puro extraídos: ~300,000
+```
+
+---
+
+### Paso 4: Iniciar la Aplicación Principal
+
 ```powershell
 python main.py
 ```
-Se abrirá la ventana principal (Dashboard estilo Bloomberg). Si tu placa ESP32 está conectada por USB, el sistema la detectará automáticamente.
+
+1. Se abrirá el **Dashboard Profesional de Operaciones**.
+2. **Para escanear una criptomoneda:**
+   * Ve a la pestaña **Chat Conversacional**.
+   * Pon la imagen o pantalla con el logotipo frente a la cámara.
+   * Presiona el botón **Escanear Cripto**.
+   * La aplicación congelará la foto, la desplegará inmediatamente en el panel derecho de la interfaz y mostrará la identificación y precio en tiempo real.
 
 ---
 
-## 📋 DIAGNÓSTICO AUTOMATIZADO INTEGRADO
+## 📁 ESTRUCTURA DEL PROYECTO
 
-El sistema en Python incluye herramientas de autodiagnóstico para el hardware, que se pueden ejecutar desde la interfaz gráfica:
-
-1. **Test OLED:** Ejecuta una animación en la pantalla para comprobar comunicación I2C.
-2. **Test Bocina:** Reproduce una melodía a 440Hz / tonos musicales para validar el amplificador MAX98357A.
-3. **Test Micrófono:** Graba 5 segundos de audio, calcula el nivel RMS (volumen) en la PC y luego lo reproduce por la bocina para confirmar que el INMP441 funciona.
-4. **Test Cámara:** Verifica la conexión HTTP y muestra el stream en vivo.
-
----
-
-## ⚠️ PROBLEMAS CONOCIDOS Y SOLUCIONES
-
-* **Puerto Serie Retenido / Error de Acceso (COMx):** Si estás programando o subiendo código, cierra Arduino IDE o tu terminal serial antes de correr `main.py`, ya que solo un programa puede usar el puerto USB a la vez.
-* **Retardo (Lag) en Audio TTS:** Si tu internet es lento, la síntesis con `edge-tts` puede demorar unos segundos. El sistema cambiará automáticamente a `pyttsx3` (Voz robótica offline) si falla.
-* **La ESP32-CAM no conecta:** Verifica que esté en la misma red Wi-Fi. Puedes revisar su IP conectando el monitor serie al momento de encenderla.
+```text
+Asistente-Financiero-Experto/
+├── main.py                     # Punto de entrada de la aplicación Tkinter
+├── config.py                   # Rutas globales, constantes y configuración
+├── entrenamiento_mejorado.py   # Script de Súper-Entrenamiento SIFT y Augmentation
+├── inicializar_datos.py        # Poblador inicial de la BD SQLite
+├── requirements.txt            # Dependencias pip de Python
+├── crypto_dataset/             # Imágenes originales base (Bitcoin, ETH, SOL...)
+├── dataset_generado/           # Mutaciones generadas físicamente (ruido, B&N, etc.)
+├── modelos_vision/             # Base de datos vectorial binaria (orb_descriptors.pkl)
+├── vision/                     # Módulos de visión por computadora
+│   ├── detector_logo.py        # DetectorSIFT (FLANN + RANSAC) y Gemini Vision API
+│   └── clasificador.py         # Orquestador del clasificador visual
+├── experto/                    # Motor de inferencia y consultas
+│   ├── router.py               # Enrutador de preguntas (Precios / Definiciones)
+│   ├── reglas.py               # Encadenamiento de conocimiento financiero
+│   └── finanzas_tiempo_real.py # Integración CoinGecko / yFinance
+├── conocimiento/               # Base de datos local
+│   ├── database.py             # Conexión y tablas SQLite3
+│   └── CRUD.py                 # Consultas a la base de datos
+├── audio/                      # Módulos de sonido y voz
+│   ├── tts.py                  # Síntesis Edge-TTS y pyttsx3
+│   └── stt.py                  # Reconocimiento de voz local con Vosk
+├── interfaz/                   # Interfaz gráfica Tkinter
+│   ├── app.py                  # Ventana principal y chat conversacional
+│   ├── panel_camara.py         # Canvas de visión y stream de video
+│   └── dashboard.py            # Tarjetas de monitoreo de mercado y hardware
+└── firmware/                   # Código Arduino C++ para el ESP32-S3
+```
 
 ---
 
 ## 📜 LICENCIA Y AUTORÍA
 
-Proyecto de arquitectura compleja de hardware embebido e IA.
-Licencia **MIT**.
+Desarrollado como una suite avanzada de arquitectura de hardware embebido, sistemas expertos e Visión por Computadora.
 
+* **Licencia:** MIT
